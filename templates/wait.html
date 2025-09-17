@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кино-лотерея: Ожидание</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-rotator"></div>
+    <div class="container">
+        <header>
+            <h1>Лотерея создана!</h1>
+            <p>Теперь дело за вашим другом. Отправьте ему ссылку ниже.</p>
+            <a href="{{ url_for('history') }}" class="history-link">Перейти в галерею лотерей &rarr;</a>
+        </header>
+
+        <div class="link-box">
+            <label for="play-link-wait">Ссылка для друга:</label>
+            <input type="text" id="play-link-wait" value="{{ play_url }}" readonly>
+            <button class="copy-btn" data-target="play-link-wait">Копировать</button>
+        </div>
+
+        <a href="#" id="telegram-share-btn-wait" class="telegram-share-button" target="_blank">
+            Поделиться в Telegram
+        </a>
+
+        <div id="wait-result-area" class="result-card waiting">
+            <h1>Ожидаем розыгрыша...</h1>
+            <p>Результат появится здесь автоматически, как только ваш друг нажмет кнопку.</p>
+            <div class="loader"></div>
+        </div>
+    </div>
+
+    <script>
+        // Передаем ID лотереи в JavaScript
+        const lotteryId = {{ lottery_id|tojson }};
+    </script>
+    <script>
+        // Этот скрипт будет работать только на этой странице
+        document.addEventListener('DOMContentLoaded', () => {
+            const waitResultArea = document.getElementById('wait-result-area');
+            const playUrlInput = document.getElementById('play-link-wait');
+            const telegramShareBtn = document.getElementById('telegram-share-btn-wait');
+            let pollInterval = null;
+
+            // --- НОВАЯ ЛОГИКА ДЛЯ КНОПКИ "ПОДЕЛИТЬСЯ" ---
+            const playUrl = playUrlInput.value;
+            const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
+            const url = encodeURIComponent(playUrl);
+            telegramShareBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
+
+
+            const checkResult = async () => {
+                try {
+                    const response = await fetch(`/api/result/${lotteryId}`);
+                    const data = await response.json();
+
+                    if (data.result) {
+                        waitResultArea.className = 'result-card';
+                        waitResultArea.innerHTML = `
+                            <h1>Розыгрыш состоялся!</h1>
+                            <p>Вашему другу выпал фильм:</p>
+                            <img src="${data.result.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="Постер фильма">
+                            <h3>${data.result.name}</h3>
+                            <p>${data.result.year}</p>
+                        `;
+                        if (pollInterval) clearInterval(pollInterval);
+                    }
+                } catch (error) {
+                    console.error("Ошибка при проверке результата:", error);
+                    waitResultArea.innerHTML = `<p class="error-message">Не удалось загрузить статус лотереи.</p>`;
+                    if (pollInterval) clearInterval(pollInterval);
+                }
+            };
+
+            pollInterval = setInterval(checkResult, 3000);
+            checkResult();
+
+            document.querySelector('.copy-btn').addEventListener('click', (e) => {
+                const targetId = e.target.dataset.target;
+                const input = document.getElementById(targetId);
+                input.select();
+                document.execCommand('copy');
+                e.target.textContent = 'Скопировано!';
+                setTimeout(() => { e.target.textContent = 'Копировать'; }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>

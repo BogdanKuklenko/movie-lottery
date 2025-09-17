@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кино-лотерея: Галерея результатов</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="gallery-body">
+
+    <header class="gallery-header">
+        <h1>Галерея Лотерей</h1>
+        <a href="{{ url_for('index') }}" class="history-link">&larr; Вернуться к созданию</a>
+    </header>
+
+    <div class="history-gallery">
+        {% for id, lottery in lotteries.items()|sort(attribute='1.createdAt', reverse=True) %}
+            
+            {% if lottery.result %}
+                <div class="gallery-item" data-lottery-id="{{ id }}">
+                    <img src="{{ lottery.result.poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result.name }}">
+                    <div class="date-overlay" data-date="{{ lottery.createdAt }}">
+                        </div>
+                </div>
+            {% else %}
+                <div class="gallery-item waiting-card" data-lottery-id="{{ id }}">
+                    <div class="waiting-content">
+                        <div class="loader-small"></div>
+                        <span>Ожидает<br>розыгрыша</span>
+                    </div>
+                    <div class="date-overlay" data-date="{{ lottery.createdAt }}">
+                        </div>
+                </div>
+            {% endif %}
+
+        {% else %}
+            <p class="no-history">История лотерей пока пуста. Создайте хотя бы одну лотерею.</p>
+        {% endfor %}
+    </div>
+
+    <div id="history-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            
+            <div id="modal-result-view" style="display: none;">
+                <div id="modal-winner-info"></div>
+                <div id="modal-loser-list">
+                    <h3>Проигравшие варианты:</h3>
+                    <ul></ul>
+                </div>
+            </div>
+
+            <div id="modal-wait-view" style="display: none;">
+                <header>
+                    <h1>Лотерея ожидает розыгрыша</h1>
+                    <p>Отправьте эту ссылку другу, чтобы он мог выбрать фильм.</p>
+                </header>
+                <div class="link-box">
+                    <label for="modal-play-link">Ссылка для друга:</label>
+                    <input type="text" id="modal-play-link" readonly>
+                    <button class="copy-btn" data-target="modal-play-link">Копировать</button>
+                </div>
+                <a href="#" id="telegram-share-btn" class="telegram-share-button" target="_blank">
+                    Поделиться в Telegram
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/history.js') }}"></script>
+</body>
+</html>

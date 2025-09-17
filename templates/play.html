@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF--8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кино-лотерея: Розыгрыш</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-rotator"></div>
+    <div class="container play-container">
+        {% if not result %}
+            <div id="pre-draw">
+                <h1>Вам предстоит выбрать фильм!</h1>
+                <p>В лотерее участвует <strong>{{ lottery.movies|length }}</strong> фильм(ов).</p>
+                <div class="roulette-container">
+                    <div class="roulette">
+                        </div>
+                </div>
+                <button id="draw-button" class="cta-button">Узнать свою судьбу!</button>
+            </div>
+            
+            <div id="result-display" style="display: none;" class="result-card">
+                <h2>Ваш фильм сегодня:</h2>
+                <img id="result-poster" src="" alt="Постер фильма">
+                <h3 id="result-name"></h3>
+                <p id="result-year"></p>
+                <p class="final-message">Приятного просмотра!</p>
+            </div>
+        {% else %}
+            <div class="result-card already-drawn">
+                <h2>Розыгрыш уже состоялся!</h2>
+                <p>Выпал фильм:</p>
+                <img src="{{ result.poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="Постер фильма">
+                <h3>{{ result.name }}</h3>
+                <p>{{ result.year }}</p>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if not result %}
+        <script>
+            // Передаем данные из Flask в JavaScript
+            const lotteryData = {{ lottery.movies|tojson }};
+            const drawUrl = "{{ url_for('draw_winner', lottery_id=request.view_args.lottery_id) }}";
+        </script>
+        <script src="{{ url_for('static', filename='js/play.js') }}"></script>
+        <script src="{{ url_for('static', filename='js/background.js') }}"></script>
+    {% endif %}
+</body>
+</html>
