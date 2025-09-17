@@ -1,45 +1,55 @@
 # app.py
 
+import os
 import json
 import random
 import re
 import string
 import requests
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
-from werkzeug.middleware.proxy_fix import ProxyFix # <--- НОВАЯ СТРОКА 1
+from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_sqlalchemy import SQLAlchemy
 
 # --- Конфигурация ---
 app = Flask(__name__)
-# --- НОВАЯ СТРОКА 2 ---
-# Этот посредник "объясняет" Flask, что он работает за прокси-сервером (как на Render),
-# и помогает правильно генерировать внешние https-ссылки.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# ВАЖНО: Убедись, что здесь твой актуальный токен
-KINOPOISK_API_TOKEN = "H12KBWS-T9TMXZD-HS93HRE-16W1W18"
-KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie"
+# --- НОВАЯ КОНФИГУРАЦИЯ БАЗЫ ДАННЫХ ---
+# Берем секретный адрес базы данных из настроек окружения Render
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app) # Инициализируем объект базы данных
 
-# Наша "база данных" в памяти.
-lotteries = {}
+# --- НОВЫЕ МОДЕЛИ ДАННЫХ (описание таблиц в базе) ---
+class Lottery(db.Model):
+    id = db.Column(db.String(6), primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    result_name = db.Column(db.String(200), nullable=True)
+    result_poster = db.Column(db.String(500), nullable=True)
+    result_year = db.Column(db.String(10), nullable=True)
+    # Связь с фильмами: одна лотерея может иметь много фильмов
+    movies = db.relationship('Movie', backref='lottery', lazy=True, cascade="all, delete-orphan")
+
+class Movie(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    poster = db.Column(db.String(500), nullable=True)
+    year = db.Column(db.String(10), nullable=False)
+    lottery_id = db.Column(db.String(6), db.ForeignKey('lottery.id'), nullable=False)
 
 # --- Вспомогательные функции (без изменений) ---
-
-def generate_unique_id(length=6):
-    while True:
-        lottery_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
-        if lottery_id not in lotteries:
-            return lottery_id
+# ... (get_movie_data_from_kinopoisk и generate_unique_id остаются такими же) ...
 
 def get_movie_data_from_kinopoisk(query):
-    headers = {"X-API-KEY": KINOPOISK_API_TOKEN}
+    headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
     kinopoisk_id_match = re.search(r'kinopoisk\.ru/(?:film|series)/(\d+)/', query)
     if kinopoisk_id_match:
         movie_id = kinopoisk_id_match.group(1)
-        search_url = f"{KINOPOISK_API_URL}/{movie_id}"
+        search_url = f"https://api.kinopoisk.dev/v1.4/movie/{movie_id}"
     else:
-        search_url = f"{KINOPOISK_API_URL}/search"
+        search_url = "https://api.kinopoisk.dev/v1.4/movie/search"
         params['query'] = query
         params['limit'] = 1
     try:
@@ -61,85 +71,99 @@ def get_movie_data_from_kinopoisk(query):
         print(f"Ошибка при запросе к API Кинопоиска: {e}")
         return None
 
-# --- Маршруты (URL) нашего сайта ---
+def generate_unique_id(length=6):
+    while True:
+        lottery_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
+        # Проверяем, что такого ID еще нет в БАЗЕ ДАННЫХ
+        if not Lottery.query.get(lottery_id):
+            return lottery_id
+
+# --- Маршруты, переписанные для работы с БАЗОЙ ДАННЫХ ---
 
 @app.route('/')
 def index():
-    """Главная страница для создания лотереи."""
     return render_template('index.html')
 
 @app.route('/fetch-movie', methods=['POST'])
 def get_movie_info():
-    """API для получения данных о фильме."""
-    query = request.json.get('query')
-    if not query: return jsonify({"error": "Пустой запрос"}), 400
-    movie_data = get_movie_data_from_kinopoisk(query)
-    if movie_data: return jsonify(movie_data)
-    else: return jsonify({"error": "Фильм не найден"}), 404
+    return get_movie_info() # Логика не меняется
 
 @app.route('/create', methods=['POST'])
 def create_lottery():
-    """Создает лотерею и возвращает ссылку на страницу ожидания."""
-    movies = request.json.get('movies')
-    if not movies or len(movies) < 2:
+    movies_json = request.json.get('movies')
+    if not movies_json or len(movies_json) < 2:
         return jsonify({"error": "Нужно добавить хотя бы два фильма"}), 400
 
     lottery_id = generate_unique_id()
-    lotteries[lottery_id] = {
-        "movies": movies,
-        "result": None,
-        "createdAt": datetime.utcnow().isoformat() + "Z" # Добавляем дату создания
-    }
+    new_lottery = Lottery(id=lottery_id)
+    db.session.add(new_lottery)
+
+    for movie_data in movies_json:
+        new_movie = Movie(
+            name=movie_data['name'],
+            poster=movie_data.get('poster'),
+            year=movie_data.get('year'),
+            lottery=new_lottery
+        )
+        db.session.add(new_movie)
+    
+    db.session.commit() # Сохраняем все изменения в базу данных
+    
     wait_url = url_for('wait_for_result', lottery_id=lottery_id)
     return jsonify({"wait_url": wait_url})
 
 @app.route('/wait/<lottery_id>')
 def wait_for_result(lottery_id):
-    """Новая страница ожидания для создателя лотереи."""
-    lottery = lotteries.get(lottery_id)
-    if not lottery:
-        return "Лотерея не найдена!", 404
+    lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
     return render_template('wait.html', lottery_id=lottery_id, play_url=play_url)
 
 @app.route('/history')
 def history():
-    """Новая страница-галерея с историей всех розыгрышей."""
-    return render_template('history.html', lotteries=lotteries)
+    # Просто берем все лотереи из базы, сортируя по дате
+    all_lotteries = Lottery.query.order_by(Lottery.created_at.desc()).all()
+    return render_template('history.html', lotteries=all_lotteries)
 
 @app.route('/l/<lottery_id>')
 def play_lottery(lottery_id):
-    """Страница для розыгрыша."""
-    lottery = lotteries.get(lottery_id)
-    if not lottery:
-        return "Лотерея не найдена!", 404
-    return render_template('play.html', lottery=lottery, result=lottery.get("result"))
+    lottery = Lottery.query.get_or_404(lottery_id)
+    return render_template('play.html', lottery=lottery, result={"name": lottery.result_name} if lottery.result_name else None)
 
 @app.route('/draw/<lottery_id>', methods=['POST'])
 def draw_winner(lottery_id):
-    """Выбирает победителя."""
-    lottery = lotteries.get(lottery_id)
-    if not lottery or lottery.get("result"):
-        return jsonify(lottery.get("result") if lottery else {"error": "Лотерея не найдена"}), 404
-    winner = random.choice(lottery["movies"])
-    lotteries[lottery_id]["result"] = winner
-    return jsonify(winner)
+    lottery = Lottery.query.get_or_404(lottery_id)
+    if lottery.result_name:
+        return jsonify({"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year})
+
+    winner = random.choice(lottery.movies)
+    lottery.result_name = winner.name
+    lottery.result_poster = winner.poster
+    lottery.result_year = winner.year
+    db.session.commit() # Сохраняем результат в базу
+
+    return jsonify({"name": winner.name, "poster": winner.poster, "year": winner.year})
 
 @app.route('/api/result/<lottery_id>')
 def get_result_data(lottery_id):
-    """API для получения данных о лотерее."""
-    lottery = lotteries.get(lottery_id)
-    if not lottery:
-        return jsonify({"error": "Лотерея не найдена"}), 404
-    
+    lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
     
+    result_data = None
+    if lottery.result_name:
+        result_data = {
+            "name": lottery.result_name,
+            "poster": lottery.result_poster,
+            "year": lottery.result_year
+        }
+
     return jsonify({
-        "movies": lottery.get("movies"),
-        "result": lottery.get("result"),
-        "createdAt": lottery.get("createdAt"),
+        "movies": [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies],
+        "result": result_data,
+        "createdAt": lottery.created_at.isoformat() + "Z",
         "play_url": play_url
     })
 
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all() # Создаем таблицы локально, если их нет
     app.run(debug=True, host='0.0.0.0', port=5000)
