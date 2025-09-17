@@ -7,6 +7,15 @@
     --card-bg-color: #1e1e1e; /* Цвет карточек */
 }
 
+/* --- НОВОЕ ГЛОБАЛЬНОЕ ПРАВИЛО ДЛЯ ВСЕХ ЭЛЕМЕНТОВ --- */
+html {
+  box-sizing: border-box;
+}
+*, *:before, *:after {
+  box-sizing: inherit;
+}
+/* -------------------------------------------------- */
+
 body {
     font-family: 'Montserrat', sans-serif;
     background-color: var(--background-color);
@@ -128,7 +137,7 @@ button:disabled {
 .movie-card:hover .remove-btn { opacity: 1; }
 
 .link-box { 
-    margin-bottom: 10px; /* Уменьшаем нижний отступ */
+    margin-bottom: 10px;
     text-align: left; 
     display: flex; 
     flex-wrap: wrap; 
@@ -219,7 +228,6 @@ button:disabled {
     .link-box .copy-btn {
         width: 100%; /* Растягиваем на всю ширину */
         margin-left: 0;
-        box-sizing: border-box; /* Чтобы padding не ломал ширину */
     }
     .roulette img {
         height: 140px; /* Уменьшаем постеры в рулетке */
