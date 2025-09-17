@@ -24,7 +24,7 @@
             <button class="copy-btn" data-target="play-link-wait">Копировать</button>
         </div>
 
-        <a href="#" id="telegram-share-btn-wait" class="telegram-share-button" target="_blank">
+        <a href="#" id="telegram-share-btn-wait" class="action-button-tg" target="_blank">
             Поделиться в Telegram
         </a>
 
@@ -47,7 +47,7 @@
             const telegramShareBtn = document.getElementById('telegram-share-btn-wait');
             let pollInterval = null;
 
-            // --- НОВАЯ ЛОГИКА ДЛЯ КНОПКИ "ПОДЕЛИТЬСЯ" ---
+            // --- Логика для кнопки "Поделиться" ---
             const playUrl = playUrlInput.value;
             const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
             const url = encodeURIComponent(playUrl);
