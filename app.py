@@ -7,9 +7,15 @@ import string
 import requests
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from datetime import datetime
+from werkzeug.middleware.proxy_fix import ProxyFix # <--- НОВАЯ СТРОКА 1
 
 # --- Конфигурация ---
 app = Flask(__name__)
+# --- НОВАЯ СТРОКА 2 ---
+# Этот посредник "объясняет" Flask, что он работает за прокси-сервером (как на Render),
+# и помогает правильно генерировать внешние https-ссылки.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 # ВАЖНО: Убедись, что здесь твой актуальный токен
 KINOPOISK_API_TOKEN = "H12KBWS-T9TMXZD-HS93HRE-16W1W18"
 KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie"
@@ -99,9 +105,6 @@ def wait_for_result(lottery_id):
 @app.route('/history')
 def history():
     """Новая страница-галерея с историей всех розыгрышей."""
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    # Теперь передаем ВСЕ лотереи, а не только завершенные.
-    # Шаблон сам решит, как их отображать.
     return render_template('history.html', lotteries=lotteries)
 
 @app.route('/l/<lottery_id>')
@@ -129,7 +132,6 @@ def get_result_data(lottery_id):
     if not lottery:
         return jsonify({"error": "Лотерея не найдена"}), 404
     
-    # Добавляем в ответ ссылку для друга, она понадобится во всплывающем окне
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
     
     return jsonify({
