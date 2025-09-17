@@ -17,34 +17,33 @@
     </header>
 
     <div class="history-gallery">
-        {% for id, lottery in lotteries.items()|sort(attribute='1.createdAt', reverse=True) %}
+        {% for lottery in lotteries %}
             
-            {% if lottery.result %}
-                <div class="gallery-item" data-lottery-id="{{ id }}">
-                    <img src="{{ lottery.result.poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result.name }}">
-                    <div class="date-overlay" data-date="{{ lottery.createdAt }}">
+            {% if lottery.result_name %}
+                <div class="gallery-item" data-lottery-id="{{ lottery.id }}">
+                    <img src="{{ lottery.result_poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result_name }}">
+                    <div class="date-overlay" data-date="{{ lottery.created_at }}">
                         </div>
                 </div>
             {% else %}
-                <div class="gallery-item waiting-card" data-lottery-id="{{ id }}">
+                <div class="gallery-item waiting-card" data-lottery-id="{{ lottery.id }}">
                     <div class="waiting-content">
                         <div class="loader-small"></div>
                         <span>Ожидает<br>розыгрыша</span>
                     </div>
-                    <div class="date-overlay" data-date="{{ lottery.createdAt }}">
+                    <div class="date-overlay" data-date="{{ lottery.created_at }}">
                         </div>
                 </div>
             {% endif %}
 
         {% else %}
-            <p class="no-history">История лотерей пока пуста. Создайте хотя бы одну лотерею.</p>
+            <p class="no-history">История лотерей пока пуста. Создайте и завершите хотя бы одну лотерею.</p>
         {% endfor %}
     </div>
 
     <div id="history-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content">
             <span class="close-button">&times;</span>
-            
             <div id="modal-result-view" style="display: none;">
                 <div id="modal-winner-info"></div>
                 <div id="modal-loser-list">
@@ -52,7 +51,6 @@
                     <ul></ul>
                 </div>
             </div>
-
             <div id="modal-wait-view" style="display: none;">
                 <header>
                     <h1>Лотерея ожидает розыгрыша</h1>
@@ -67,7 +65,6 @@
                     Поделиться в Telegram
                 </a>
             </div>
-
         </div>
     </div>
 

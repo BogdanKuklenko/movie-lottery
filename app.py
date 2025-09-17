@@ -16,15 +16,14 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 # --- НОВАЯ КОНФИГУРАЦИЯ БАЗЫ ДАННЫХ ---
-# Берем секретный адрес базы данных из настроек окружения Render
 db_uri = os.environ.get('DATABASE_URL')
 if db_uri and db_uri.startswith("postgres://"):
     db_uri = db_uri.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app) # Инициализируем объект базы данных
+db = SQLAlchemy(app)
 
-# --- НОВЫЕ МОДЕЛИ ДАННЫХ (описание таблиц в базе) ---
+# --- НОВЫЕ МОДЕЛИ ДАННЫХ ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -42,7 +41,6 @@ class Movie(db.Model):
 
 # --- Вспомогательные функции ---
 def get_movie_data_from_kinopoisk(query):
-    # Теперь токен тоже берется из окружения Render
     headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
     kinopoisk_id_match = re.search(r'kinopoisk\.ru/(?:film|series)/(\d+)/', query)
@@ -78,7 +76,7 @@ def generate_unique_id(length=6):
         if not Lottery.query.get(lottery_id):
             return lottery_id
 
-# --- Маршруты, переписанные для работы с БАЗОЙ ДАННЫХ ---
+# --- Маршруты ---
 
 @app.route('/')
 def index():
@@ -90,8 +88,10 @@ def get_movie_info():
     query = request.json.get('query')
     if not query: return jsonify({"error": "Пустой запрос"}), 400
     movie_data = get_movie_data_from_kinopoisk(query)
-    if movie_data: return jsonify(movie_data)
-    else: return jsonify({"error": "Фильм не найден"}), 404
+    if movie_data:
+        return jsonify(movie_data)
+    else:
+        return jsonify({"error": "Фильм не найден"}), 404
 
 @app.route('/create', methods=['POST'])
 def create_lottery():
@@ -112,7 +112,8 @@ def create_lottery():
 def wait_for_result(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
-    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url)
+    # Передаем весь объект lottery в шаблон
+    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url, lottery=lottery)
 
 @app.route('/history')
 def history():
@@ -122,7 +123,9 @@ def history():
 @app.route('/l/<lottery_id>')
 def play_lottery(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
-    return render_template('play.html', lottery=lottery, result={"name": lottery.result_name} if lottery.result_name else None)
+    # Создаем объект result для шаблона, чтобы сохранить совместимость
+    result_obj = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
+    return render_template('play.html', lottery=lottery, result=result_obj)
 
 @app.route('/draw/<lottery_id>', methods=['POST'])
 def draw_winner(lottery_id):
@@ -148,7 +151,6 @@ def get_result_data(lottery_id):
         "play_url": play_url
     })
 
-# --- НОВЫЙ ВРЕМЕННЫЙ МАРШРУТ ДЛЯ СОЗДАНИЯ ТАБЛИЦ В БАЗЕ ДАННЫХ ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
