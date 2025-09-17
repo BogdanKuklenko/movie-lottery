@@ -10,13 +10,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalResultView = document.getElementById('modal-result-view');
     const modalWaitView = document.getElementById('modal-wait-view');
     const modalWinnerInfo = document.getElementById('modal-winner-info');
+    const modalLoserListContainer = document.getElementById('modal-loser-list');
     const modalLoserList = document.querySelector('#modal-loser-list ul');
     const modalPlayLink = document.getElementById('modal-play-link');
     const telegramShareBtn = document.getElementById('telegram-share-btn');
 
     const dateOverlays = document.querySelectorAll('.date-overlay');
 
-    // --- 1. Форматирование дат на постерах (без изменений) ---
+    // --- 1. Форматирование дат на постерах ---
     dateOverlays.forEach(overlay => {
         const isoDate = overlay.dataset.date;
         if (isoDate) {
@@ -27,14 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- 2. Логика открытия модального окна (полностью переписана) ---
+    // --- 2. Логика открытия модального окна ---
     const openModal = async (lotteryId) => {
-        // Показываем оверлей и скрываем оба вида контента
         modalOverlay.style.display = 'flex';
         modalResultView.style.display = 'none';
         modalWaitView.style.display = 'none';
         
-        // Показываем лоадер в блоке для результатов, так как он общий
         modalWinnerInfo.innerHTML = '<div class="loader"></div>';
         modalLoserList.innerHTML = '';
 
@@ -48,7 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const winner = data.result;
                 const losers = data.movies.filter(movie => movie.name !== winner.name);
 
-                // Заполняем информацию о победителе
                 modalWinnerInfo.innerHTML = `
                     <div class="result-card">
                         <img src="${winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="Постер ${winner.name}">
@@ -56,18 +54,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p>${winner.year}</p>
                     </div>
                 `;
-                // Заполняем список проигравших
+                
+                // --- ИЗМЕНЕНИЕ ЗДЕСЬ: Формируем список проигравших с картинками ---
+                modalLoserList.innerHTML = ''; // Очищаем предыдущий список
                 if (losers.length > 0) {
                     losers.forEach(loser => {
                         const li = document.createElement('li');
-                        li.textContent = loser.name;
+                        li.className = 'loser-item'; // Добавляем класс для стилизации
+                        li.innerHTML = `
+                            <img class="loser-poster" src="${loser.poster || 'https://via.placeholder.com/40x60.png?text=?'}" alt="${loser.name}">
+                            <span class="loser-name">${loser.name}</span>
+                        `;
                         modalLoserList.appendChild(li);
                     });
-                    document.getElementById('modal-loser-list').style.display = 'block';
+                    modalLoserListContainer.style.display = 'block';
                 } else {
-                    document.getElementById('modal-loser-list').style.display = 'none';
+                    modalLoserListContainer.style.display = 'none';
                 }
-                // Показываем блок с результатами
+                
                 modalResultView.style.display = 'block';
 
             } else {
@@ -75,23 +79,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const playUrl = data.play_url;
                 modalPlayLink.value = playUrl;
 
-                // Формируем ссылку для Telegram
                 const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
                 const url = encodeURIComponent(playUrl);
                 telegramShareBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
 
-                // Показываем блок с ожиданием
                 modalWaitView.style.display = 'block';
             }
 
         } catch (error) {
-            modalResultView.style.display = 'block'; // Показываем блок с результатами для вывода ошибки
+            modalResultView.style.display = 'block';
             modalWinnerInfo.innerHTML = `<p class="error-message">Не удалось загрузить детали лотереи.</p>`;
             console.error(error);
         }
     };
 
-    // Обработчик клика на галерею (без изменений)
+    // Обработчик клика на галерею
     if (gallery) {
         gallery.addEventListener('click', (e) => {
             const galleryItem = e.target.closest('.gallery-item') || e.target.closest('.waiting-card');
@@ -102,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 3. Логика закрытия модального окна (без изменений) ---
+    // --- 3. Логика закрытия модального окна ---
     const closeModal = () => {
         modalOverlay.style.display = 'none';
     };
