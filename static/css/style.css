@@ -145,25 +145,120 @@ button:disabled {
 
 /* --- СТИЛИ ДЛЯ СТРАНИЦЫ-ГАЛЕРЕИ И МОДАЛЬНОГО ОКНА --- */
 
-.gallery-body { padding: 0; }
-.gallery-header { padding: 20px; text-align: center; }
-.history-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; }
-.gallery-item, .waiting-card { position: relative; overflow: hidden; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); aspect-ratio: 2 / 3; /* Поддерживаем пропорции постера */ }
-.gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease, filter 0.4s ease; }
-.gallery-item:hover img { transform: scale(1.05); filter: brightness(1.1); }
-.date-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); color: white; padding: 20px 10px 10px; font-size: 14px; font-weight: 700; text-align: left; transition: opacity 0.4s; }
-.gallery-item:hover .date-overlay, .waiting-card:hover .date-overlay { opacity: 0; }
-.no-history { grid-column: 1 / -1; text-align: center; font-size: 1.2em; color: #adb5bd; padding: 50px; }
+.gallery-body {
+    padding: 0; /* Убираем отступы для тела галереи */
+}
+.gallery-header {
+    padding: 20px;
+    text-align: center;
+}
+.history-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    padding: 8px;
+}
+.gallery-item, .waiting-card {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    aspect-ratio: 2 / 3; /* Поддерживаем пропорции постера */
+}
+.gallery-item img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease, filter 0.4s ease;
+}
+.gallery-item:hover img {
+    transform: scale(1.05);
+    filter: brightness(1.1);
+}
+.date-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    color: white;
+    padding: 20px 10px 10px;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: left;
+    transition: opacity 0.4s;
+    pointer-events: none; /* Чтобы не мешал клику по карточке */
+}
+.gallery-item:hover .date-overlay, .waiting-card:hover .date-overlay {
+    opacity: 0;
+}
+.no-history {
+    grid-column: 1 / -1; /* Растягиваем на всю ширину */
+    text-align: center;
+    font-size: 1.2em;
+    color: #adb5bd;
+    padding: 50px;
+}
 
-/* НОВЫЙ СТИЛЬ для карточки в ожидании */
-.waiting-card { background-color: #2b2b2b; display: flex; justify-content: center; align-items: center; text-align: center; color: #adb5bd; transition: background-color 0.4s; }
-.waiting-card:hover { background-color: #343a40; }
-.waiting-content .loader-small { border: 3px solid #6c757d; border-top: 3px solid var(--primary-color); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
-.waiting-content span { font-weight: 700; }
+.waiting-card {
+    background-color: #2b2b2b;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #adb5bd;
+    transition: background-color 0.4s;
+}
+.waiting-card:hover {
+    background-color: #343a40;
+}
+.waiting-content .loader-small {
+    border: 3px solid #6c757d;
+    border-top: 3px solid var(--primary-color);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px;
+}
+.waiting-content span {
+    font-weight: 700;
+}
 
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(5px); }
-.modal-content { background-color: var(--card-bg-color); padding: 30px; border-radius: 15px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative; animation: zoomIn 0.3s ease-out; }
-.close-button { position: absolute; top: 10px; right: 20px; font-size: 30px; color: #adb5bd; cursor: pointer; transition: color 0.2s; }
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(5px);
+}
+.modal-content {
+    background-color: var(--card-bg-color);
+    padding: 30px;
+    border-radius: 15px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    animation: zoomIn 0.3s ease-out;
+}
+.close-button {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    font-size: 30px;
+    color: #adb5bd;
+    cursor: pointer;
+    transition: color 0.2s;
+}
 .close-button:hover { color: white; }
 #modal-loser-list { text-align: left; margin-top: 20px; }
 #modal-loser-list ul { padding-left: 20px; }
@@ -183,10 +278,11 @@ button:disabled {
     color: white;
     border-radius: 8px;
     margin-top: 20px;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, transform 0.2s;
 }
 .telegram-share-button:hover {
     background-color: #0099e6;
+    transform: translateY(-2px);
 }
 
 
