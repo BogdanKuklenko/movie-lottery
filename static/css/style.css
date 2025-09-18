@@ -5,6 +5,7 @@
     --background-color: #121212; /* Почти черный */
     --text-color: #f8f9fa; /* Светло-серый */
     --card-bg-color: #1e1e1e; /* Цвет карточек */
+    --danger-color: #dc3545; /* Красный для удаления */
 }
 
 html {
@@ -55,7 +56,7 @@ body::-webkit-scrollbar-thumb:hover, .modal-content::-webkit-scrollbar-thumb:hov
 
 header {
     margin-bottom: 30px;
-    position: relative; /* Чтобы быть над фоном */
+    position: relative;
     z-index: 1;
 }
 header h1 {
@@ -182,7 +183,7 @@ button:disabled {
     left: 0;
     width: 100vw;
     height: 100vh;
-    z-index: 0; /* ИЗМЕНЕНИЕ ЗДЕСЬ: фон теперь выше body, но ниже контента */
+    z-index: 0;
     overflow: hidden;
 }
 .bg-image {
@@ -216,9 +217,45 @@ button:disabled {
 
 /* --- СТИЛИ ДЛЯ СТРАНИЦЫ-ГАЛЕРЕИ И МОДАЛЬНОГО ОКНА --- */
 .gallery-body { padding: 0; }
-.gallery-header { padding: 20px; text-align: center; position: relative; z-index: 1; } /* Добавлено позиционирование */
-.history-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; position: relative; z-index: 1; } /* Добавлено позиционирование */
-.gallery-item, .waiting-card { position: relative; overflow: hidden; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); aspect-ratio: 2 / 3; transition: transform 0.3s ease; }
+.gallery-header { padding: 20px; text-align: center; position: relative; z-index: 1; }
+.history-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; position: relative; z-index: 1; }
+.gallery-item, .waiting-card { position: relative; overflow: hidden; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); aspect-ratio: 2 / 3; transition: transform 0.3s ease, opacity 0.5s ease; }
+
+/* НОВЫЙ СТИЛЬ для карточки в процессе удаления */
+.gallery-item.is-deleting, .waiting-card.is-deleting {
+    transform: scale(0.9);
+    opacity: 0;
+}
+
+/* НОВЫЕ СТИЛИ для кнопки "Удалить" */
+.delete-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background-color: rgba(0,0,0,0.6);
+    color: white;
+    font-size: 20px;
+    line-height: 30px;
+    text-align: center;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.3s, transform 0.3s, background-color 0.3s;
+}
+.gallery-item:hover .delete-button, .waiting-card:hover .delete-button {
+    opacity: 1;
+    transform: scale(1);
+}
+.delete-button:hover {
+    background-color: var(--danger-color);
+}
+
 .gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease, filter 0.4s ease; animation: reveal 0.5s ease-out forwards; }
 .gallery-item:hover img { transform: scale(1.05); filter: brightness(1.1); }
 .date-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); color: white; padding: 20px 10px 10px; font-size: 14px; font-weight: 700; text-align: left; transition: opacity 0.4s; pointer-events: none; }

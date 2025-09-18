@@ -10,6 +10,7 @@ from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import ProgrammingError # <-- НОВЫЙ ИМПОРТ
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -38,7 +39,6 @@ class Movie(db.Model):
     year = db.Column(db.String(10), nullable=False)
     lottery_id = db.Column(db.String(6), db.ForeignKey('lottery.id'), nullable=False)
 
-# --- НОВАЯ МОДЕЛЬ ДЛЯ ФОНА ---
 class BackgroundPhoto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     poster_url = db.Column(db.String(500), unique=True, nullable=False)
@@ -79,10 +79,16 @@ def generate_unique_id(length=6):
         if not Lottery.query.get(lottery_id):
             return lottery_id
 
-# --- НОВАЯ ФУНКЦИЯ для получения фото для фона ---
+# --- ИЗМЕНЕННАЯ ФУНКЦИЯ для получения фото для фона ---
 def get_background_photos():
-    # Получаем 20 последних добавленных фото для оптимизации
-    return BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
+    try:
+        # Пытаемся получить 20 последних добавленных фото
+        return BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
+    except ProgrammingError:
+        # Эта ошибка возникает, если таблицы еще не созданы в базе.
+        # В этом случае просто возвращаем пустой список и не даем сайту упасть.
+        print("WARNING: BackgroundPhoto table not found. Returning empty list.")
+        return []
 
 # --- Маршруты ---
 
@@ -106,7 +112,6 @@ def create_lottery():
     if not movies_json or len(movies_json) < 2:
         return jsonify({"error": "Нужно добавить хотя бы два фильма"}), 400
     
-    # Создаем лотерею и фильмы (как и раньше)
     lottery_id = generate_unique_id()
     new_lottery = Lottery(id=lottery_id)
     db.session.add(new_lottery)
@@ -114,14 +119,11 @@ def create_lottery():
         new_movie = Movie(name=movie_data['name'], poster=movie_data.get('poster'), year=movie_data.get('year'), lottery=new_lottery)
         db.session.add(new_movie)
     
-    # --- НОВЫЙ БЛОК: Добавляем постеры на "холст" ---
-    # Получаем текущий максимальный z-index, чтобы новые фото были поверх
     max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
     
     for movie_data in movies_json:
         poster = movie_data.get('poster')
         if poster:
-            # Проверяем, нет ли уже такого постера на холсте
             exists = BackgroundPhoto.query.filter_by(poster_url=poster).first()
             if not exists:
                 max_z_index += 1
@@ -143,7 +145,8 @@ def wait_for_result(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
     background_photos = get_background_photos()
-    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url, lottery=lottery, background_photos=background_photos)
+    lottery_data_for_js = { "movies": [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies] }
+    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url, lottery_for_js=lottery_data_for_js, background_photos=background_photos)
 
 @app.route('/history')
 def history():
@@ -179,7 +182,6 @@ def get_result_data(lottery_id):
     result_data = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
     return jsonify({"movies": [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies], "result": result_data, "createdAt": lottery.created_at.isoformat() + "Z", "play_url": play_url})
 
-# --- НОВЫЙ МАРШРУТ ДЛЯ УДАЛЕНИЯ ---
 @app.route('/delete-lottery/<lottery_id>', methods=['POST'])
 def delete_lottery(lottery_id):
     lottery_to_delete = Lottery.query.get(lottery_id)
@@ -189,12 +191,12 @@ def delete_lottery(lottery_id):
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
-# --- МАРШРУТ ДЛЯ ПЕРЕСОЗДАНИЯ БАЗЫ ДАННЫХ ---
+# Маршрут для пересоздания базы данных (теперь безопасный)
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
-        db.drop_all() # Сначала удаляем все старые таблицы
-        db.create_all() # Затем создаем новые по нашим моделям
+        db.drop_all() 
+        db.create_all() 
     return "База данных полностью очищена и создана заново!"
 
 if __name__ == '__main__':

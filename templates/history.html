@@ -23,18 +23,18 @@
             
             {% if lottery.result_name %}
                 <div class="gallery-item" data-lottery-id="{{ lottery.id }}">
+                    <button class="delete-button" title="Удалить лотерею">&times;</button>
                     <img src="{{ lottery.result_poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result_name }}">
-                    <div class="date-overlay" data-date="{{ lottery.created_at }}">
-                        </div>
+                    <div class="date-overlay" data-date="{{ lottery.created_at }}"></div>
                 </div>
             {% else %}
                 <div class="gallery-item waiting-card" data-lottery-id="{{ lottery.id }}">
+                    <button class="delete-button" title="Удалить лотерею">&times;</button>
                     <div class="waiting-content">
                         <div class="loader-small"></div>
                         <span>Ожидает<br>розыгрыша</span>
                     </div>
-                    <div class="date-overlay" data-date="{{ lottery.created_at }}">
-                        </div>
+                    <div class="date-overlay" data-date="{{ lottery.created_at }}"></div>
                 </div>
             {% endif %}
 
@@ -54,18 +54,13 @@
                 </div>
             </div>
             <div id="modal-wait-view" style="display: none;">
-                <header>
-                    <h1>Лотерея ожидает розыгрыша</h1>
-                    <p>Отправьте эту ссылку другу, чтобы он мог выбрать фильм.</p>
-                </header>
+                <header><h1>Лотерея ожидает розыгрыша</h1><p>Отправьте эту ссылку другу, чтобы он мог выбрать фильм.</p></header>
                 <div class="link-box">
                     <label for="modal-play-link">Ссылка для друга:</label>
                     <input type="text" id="modal-play-link" readonly>
                     <button class="copy-btn" data-target="modal-play-link">Копировать</button>
                 </div>
-                <a href="#" id="telegram-share-btn" class="action-button-tg" target="_blank">
-                    Поделиться в Telegram
-                </a>
+                <a href="#" id="telegram-share-btn" class="action-button-tg" target="_blank">Поделиться в Telegram</a>
             </div>
         </div>
     </div>
@@ -73,18 +68,8 @@
     <script src="{{ url_for('static', filename='js/history.js') }}"></script>
     
     <script>
-        // Собираем все постеры со всех лотерей на странице для фона
-        const allPosters = [
-            {% for lottery in lotteries %}
-                {% for movie in lottery.movies %}
-                    {% if movie.poster %}
-                        "{{ movie.poster|safe }}",
-                    {% endif %}
-                {% endfor %}
-            {% endfor %}
-        ];
-        // Убираем дубликаты и создаем нужный формат для background.js
-        var movies = [...new Set(allPosters)].map(posterUrl => ({ poster: posterUrl }));
+        // Передаем готовые данные о фоне, полученные от сервера
+        var backgroundPhotos = {{ background_photos|tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 </body>
