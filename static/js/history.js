@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const gallery = document.querySelector('.history-gallery');
     const modalOverlay = document.getElementById('history-modal');
     
-    // ... (весь код для элементов модального окна остается без изменений) ...
     const closeButton = document.querySelector('.close-button');
     const modalResultView = document.getElementById('modal-result-view');
     const modalWaitView = document.getElementById('modal-wait-view');
@@ -16,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const dateOverlays = document.querySelectorAll('.date-overlay');
 
-    // --- 1. Форматирование дат на постерах (без изменений) ---
+    // --- 1. Форматирование дат на постерах ---
     dateOverlays.forEach(overlay => {
         const isoDate = overlay.dataset.date;
         if (isoDate) {
@@ -27,9 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- 2. Логика открытия модального окна (без изменений) ---
+    // --- 2. Логика открытия модального окна ---
     const openModal = async (lotteryId) => {
-        // ... (весь код функции openModal остается без изменений) ...
         modalOverlay.style.display = 'flex';
         modalResultView.style.display = 'none';
         modalWaitView.style.display = 'none';
@@ -71,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Обработчик клика на галерею (без изменений)
     if (gallery) {
         gallery.addEventListener('click', (e) => {
             const galleryItem = e.target.closest('.gallery-item') || e.target.closest('.waiting-card');
@@ -82,55 +79,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 3. Логика закрытия модального окна (без изменений) ---
-    const closeModal = () => { /* ... */ };
+    // --- 3. ИСПРАВЛЕННАЯ Логика закрытия модального окна ---
+    const closeModal = () => {
+        modalOverlay.style.display = 'none';
+    };
+
     closeButton.addEventListener('click', closeModal);
-    modalOverlay.addEventListener('click', (e) => { /* ... */ });
-    document.addEventListener('keydown', (e) => { /* ... */ });
 
-    // --- НОВАЯ СЕКЦИЯ: АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ СТАТУСА ---
+    modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+            closeModal();
+        }
+    });
     
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modalOverlay.style.display !== 'none') {
+            closeModal();
+        }
+    });
+
+    // --- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ СТАТУСА ---
     const startHistoryPolling = () => {
-        // Находим все карточки, которые ожидают розыгрыша
         const waitingCards = document.querySelectorAll('.waiting-card');
-        if (waitingCards.length === 0) return; // Если таких нет, ничего не делаем
-
-        // Собираем их ID в один массив
+        if (waitingCards.length === 0) return;
         let waitingIds = Array.from(waitingCards).map(card => card.dataset.lotteryId);
-
         const pollInterval = setInterval(async () => {
             if (waitingIds.length === 0) {
-                clearInterval(pollInterval); // Останавливаем проверку, если все обновилось
+                clearInterval(pollInterval);
                 return;
             }
-
-            // Проверяем статус для каждой ожидающей лотереи
             for (const id of waitingIds) {
                 try {
                     const response = await fetch(`/api/result/${id}`);
                     const data = await response.json();
-
-                    // Если появился результат...
                     if (data.result) {
-                        console.log(`Lottery ${id} has a result! Updating card.`);
                         updateCardOnPage(id, data);
-                        // Убираем ID из списка для проверки
                         waitingIds = waitingIds.filter(waitingId => waitingId !== id);
                     }
                 } catch (error) {
                     console.error(`Failed to poll lottery ${id}:`, error);
                 }
             }
-        }, 7000); // Проверяем каждые 7 секунд
+        }, 7000);
     };
 
     const updateCardOnPage = (lotteryId, lotteryData) => {
         const card = document.querySelector(`.waiting-card[data-lottery-id="${lotteryId}"]`);
         if (!card) return;
-
-        // Меняем классы, чтобы карточка стала обычной карточкой галереи
         card.className = 'gallery-item';
-        // Заполняем ее новым содержимым - постером победителя
         card.innerHTML = `
             <img src="${lotteryData.result.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="${lotteryData.result.name}">
             <div class="date-overlay" data-date="${lotteryData.createdAt}">
@@ -139,6 +135,5 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     };
 
-    // Запускаем процесс проверки
     startHistoryPolling();
 });
