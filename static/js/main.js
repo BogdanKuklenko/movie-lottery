@@ -1,10 +1,9 @@
 // static/js/main.js
 
-// Глобальный массив с фильмами, чтобы background.js мог его использовать
+// Глобальный массив с фильмами
 var movies = [];
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Получаем все нужные элементы со страницы
     const movieInput = document.getElementById('movie-input');
     const addMovieBtn = document.getElementById('add-movie-btn');
     const createLotteryBtn = document.getElementById('create-lottery-btn');
@@ -38,11 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 movies.splice(indexToRemove, 1);
                 renderMovieList();
                 updateCreateButtonState();
-
-                // --- ИЗМЕНЕНИЕ 1: Обновляем фон после удаления фильма ---
-                if (typeof window.updateDynamicBackground === 'function') {
-                    window.updateDynamicBackground(movies);
-                }
+                // Старый вызов для обновления фона удален
             });
         });
     };
@@ -72,10 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMovieList();
             updateCreateButtonState();
             
-            // --- ИЗМЕНЕНИЕ 2: Обновляем фон после добавления фильма ---
-            if (typeof window.updateDynamicBackground === 'function') {
-                window.updateDynamicBackground(movies);
-            }
+            // Старый вызов для обновления фона удален
 
             movieInput.value = '';
 

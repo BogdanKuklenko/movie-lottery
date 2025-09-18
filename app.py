@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.exc import ProgrammingError # <-- НОВЫЙ ИМПОРТ
+from sqlalchemy.exc import ProgrammingError
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -50,7 +50,6 @@ class BackgroundPhoto(db.Model):
 
 # --- Вспомогательные функции ---
 def get_movie_data_from_kinopoisk(query):
-    # ... (код без изменений)
     headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
     kinopoisk_id_match = re.search(r'kinopoisk\.ru/(?:film|series)/(\d+)/', query)
@@ -79,14 +78,21 @@ def generate_unique_id(length=6):
         if not Lottery.query.get(lottery_id):
             return lottery_id
 
-# --- ИЗМЕНЕННАЯ ФУНКЦИЯ для получения фото для фона ---
 def get_background_photos():
     try:
-        # Пытаемся получить 20 последних добавленных фото
-        return BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
+        photos = BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        # Преобразуем сложный объект в простой словарь, безопасный для JSON
+        return [
+            {
+                "poster_url": p.poster_url,
+                "pos_top": p.pos_top,
+                "pos_left": p.pos_left,
+                "rotation": p.rotation,
+                "z_index": p.z_index
+            } for p in photos
+        ]
     except ProgrammingError:
-        # Эта ошибка возникает, если таблицы еще не созданы в базе.
-        # В этом случае просто возвращаем пустой список и не даем сайту упасть.
         print("WARNING: BackgroundPhoto table not found. Returning empty list.")
         return []
 
@@ -97,9 +103,9 @@ def index():
     background_photos = get_background_photos()
     return render_template('index.html', background_photos=background_photos)
 
+# ... (маршруты /fetch-movie и /create без изменений) ...
 @app.route('/fetch-movie', methods=['POST'])
 def get_movie_info():
-    # ... (код без изменений)
     query = request.json.get('query')
     if not query: return jsonify({"error": "Пустой запрос"}), 400
     movie_data = get_movie_data_from_kinopoisk(query)
@@ -111,16 +117,13 @@ def create_lottery():
     movies_json = request.json.get('movies')
     if not movies_json or len(movies_json) < 2:
         return jsonify({"error": "Нужно добавить хотя бы два фильма"}), 400
-    
     lottery_id = generate_unique_id()
     new_lottery = Lottery(id=lottery_id)
     db.session.add(new_lottery)
     for movie_data in movies_json:
         new_movie = Movie(name=movie_data['name'], poster=movie_data.get('poster'), year=movie_data.get('year'), lottery=new_lottery)
         db.session.add(new_movie)
-    
     max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
-    
     for movie_data in movies_json:
         poster = movie_data.get('poster')
         if poster:
@@ -128,17 +131,15 @@ def create_lottery():
             if not exists:
                 max_z_index += 1
                 new_photo = BackgroundPhoto(
-                    poster_url=poster,
-                    pos_top=random.uniform(5, 65),
-                    pos_left=random.uniform(5, 75),
-                    rotation=random.randint(-30, 30),
+                    poster_url=poster, pos_top=random.uniform(5, 65),
+                    pos_left=random.uniform(5, 75), rotation=random.randint(-30, 30),
                     z_index=max_z_index
                 )
                 db.session.add(new_photo)
-
     db.session.commit()
     wait_url = url_for('wait_for_result', lottery_id=lottery_id)
     return jsonify({"wait_url": wait_url})
+
 
 @app.route('/wait/<lottery_id>')
 def wait_for_result(lottery_id):
@@ -161,9 +162,9 @@ def play_lottery(lottery_id):
     background_photos = get_background_photos()
     return render_template('play.html', lottery=lottery, result=result_obj, background_photos=background_photos)
 
+# ... (маршруты /draw, /api/result, /delete-lottery и /init-db без изменений) ...
 @app.route('/draw/<lottery_id>', methods=['POST'])
 def draw_winner(lottery_id):
-    # ... (код без изменений)
     lottery = Lottery.query.get_or_404(lottery_id)
     if lottery.result_name:
         return jsonify({"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year})
@@ -176,7 +177,6 @@ def draw_winner(lottery_id):
 
 @app.route('/api/result/<lottery_id>')
 def get_result_data(lottery_id):
-    # ... (код без изменений)
     lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
     result_data = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
@@ -191,7 +191,6 @@ def delete_lottery(lottery_id):
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
-# Маршрут для пересоздания базы данных (теперь безопасный)
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
