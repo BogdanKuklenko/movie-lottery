@@ -171,19 +171,17 @@ button:disabled {
     width: 100%;
     overflow: hidden;
     margin: 30px 0;
-    position: relative; /* Нужно для градиентной маски */
-    /* Убираем рамку */
+    position: relative;
 }
-/* Эффект "исчезновения" по краям вместо рамки */
 .roulette-container:before,
 .roulette-container:after {
     content: '';
     position: absolute;
     top: 0;
     height: 100%;
-    width: 15%; /* Ширина зоны затухания */
+    width: 15%;
     z-index: 2;
-    pointer-events: none; /* Чтобы не мешали клику */
+    pointer-events: none;
 }
 .roulette-container:before {
     left: 0;
@@ -197,7 +195,6 @@ button:disabled {
 .roulette {
     display: flex;
     gap: 15px;
-    /* Новая анимация: плавная, долгая, с правильным замедлением */
     transition: transform 5s cubic-bezier(0.2, 0.85, 0.25, 1);
 }
 
@@ -208,7 +205,6 @@ button:disabled {
     filter: blur(20px) grayscale(50%);
     transform: scale(0.9);
     opacity: 0.7;
-    /* Замедленный transition, чтобы картинка проявлялась плавно в конце */
     transition: filter 1s ease-out, transform 1s ease-out, opacity 1s ease-out;
 }
 .roulette img.winner {
