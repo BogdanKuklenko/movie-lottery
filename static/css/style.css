@@ -180,8 +180,7 @@ button:disabled {
 .roulette {
     display: flex;
     gap: 15px;
-    /* Анимация с резким стартом и очень плавным торможением */
-    transition: transform 5s cubic-bezier(0.15, 1, 0.3, 1);
+    /* УДАЛЯЕМ transition, вся анимация будет в JS */
 }
 
 .roulette img {
