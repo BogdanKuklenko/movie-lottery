@@ -5,8 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultDiv = document.getElementById('result-display');
     const rouletteDiv = document.querySelector('.roulette');
 
+    // --- НОВОЕ: Запрещаем стандартное контекстное меню на рулетке ---
+    rouletteDiv.addEventListener('contextmenu', e => e.preventDefault());
+
     // Заполняем "рулетку" постерами для анимации
-    const animationMovies = [...lotteryData, ...lotteryData, ...lotteryData]; 
+    const animationMovies = [...lotteryData, ...lotteryData, ...lotteryData];
     animationMovies.forEach(movie => {
         const img = document.createElement('img');
         img.src = movie.poster || 'https://via.placeholder.com/100x150.png?text=No+Image';
@@ -20,51 +23,43 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(drawUrl, { method: 'POST' });
             if (!response.ok) throw new Error('Не удалось провести розыгрыш');
-            
+
             const winner = await response.json();
             const rouletteContainer = document.querySelector('.roulette-container');
             const winnerIndex = lotteryData.findIndex(m => m.name === winner.name);
-            const targetElementIndex = lotteryData.length + winnerIndex; 
+            const targetElementIndex = lotteryData.length + winnerIndex;
             const targetElement = rouletteDiv.children[targetElementIndex];
-            
-            // --- ОБНОВЛЕННАЯ И ПРОВЕРЕННАЯ ЛОГИКА АНИМАЦИИ ---
 
-            // 1. Рассчитываем базовую позицию для остановки (в центре)
+            // --- ПОЛНОСТЬЮ НОВАЯ ЛОГИКА АНИМАЦИИ ---
+
+            // 1. Рассчитываем финальную позицию для остановки (в центре)
             const targetPosition = targetElement.offsetLeft + targetElement.offsetWidth / 2;
             const centerPosition = rouletteContainer.offsetWidth / 2;
-            let finalPosition = -(targetPosition - centerPosition);
+            const finalPosition = -(targetPosition - centerPosition);
 
-            // 2. Искусственно добавляем несколько оборотов для эффекта
+            // 2. Добавляем несколько оборотов для эффекта "прокрутки"
             const oneTurnDistance = rouletteDiv.scrollWidth / 3;
-            const randomTurns = Math.floor(Math.random() * 2) + 3; // от 3 до 4 оборотов
-            
-            // --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-            // В прошлый раз я по ошибке оставил здесь минус. Теперь здесь ПЛЮС.
-            // Это заставит анимацию двигаться в правильном направлении: справа налево.
-            const startPosition = finalPosition + (oneTurnDistance * randomTurns);
+            const randomTurns = Math.floor(Math.random() * 2) + 4; // от 4 до 5 оборотов
+            const animationTargetPosition = finalPosition - (oneTurnDistance * randomTurns);
 
-            // 3. Запускаем анимацию с помощью Anime.js
-            anime({
-                targets: rouletteDiv,
-                translateX: [startPosition, finalPosition], // Анимируем от дальней точки к финальной
-                duration: 6000, // Общая длительность 6 секунд
-                easing: 'cubicBezier(0.2, 1, 0.2, 1)', // Кривая с резким стартом и плавным торможением
+            // 3. Запускаем анимацию с помощью CSS
+            // Сначала добавляем класс, который включает плавный переход (transition)
+            rouletteDiv.classList.add('is-spinning');
+            // Затем задаем финальную точку, до которой CSS должен анимировать
+            rouletteDiv.style.transform = `translateX(${animationTargetPosition}px)`;
 
-                // Функция, которая вызывается на каждом кадре анимации
-                update: function(anim) {
-                    // Когда анимация почти завершена (прошла 85% пути), проявляем победителя
-                    if (anim.progress > 85) {
-                        if (!targetElement.classList.contains('winner')) {
-                             targetElement.classList.add('winner');
-                        }
-                    }
-                },
-
-                // Функция, которая вызывается после завершения анимации
-                complete: function(anim) {
-                    // Плавно скрываем рулетку и показываем финальный результат
+            // 4. Ждем завершения анимации CSS (6 секунд)
+            setTimeout(() => {
+                // Выделяем победителя
+                targetElement.classList.add('winner');
+                
+                // Плавно скрываем рулетку и показываем финальный результат
+                setTimeout(() => {
                     preDrawDiv.style.transition = 'opacity 0.5s ease-out';
                     preDrawDiv.style.opacity = '0';
+
+                    // --- НОВОЕ: Добавляем класс для отключения скролла на странице ---
+                    document.body.classList.add('no-scroll');
 
                     setTimeout(() => {
                         preDrawDiv.style.display = 'none';
@@ -73,8 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         document.getElementById('result-year').textContent = winner.year;
                         resultDiv.style.display = 'flex';
                     }, 500);
-                }
-            });
+                }, 1000); // Доп. задержка, чтобы увидеть выделенного победителя
+
+            }, 6000); // Должно совпадать с длительностью transition в CSS
 
         } catch (error) {
             console.error(error);
