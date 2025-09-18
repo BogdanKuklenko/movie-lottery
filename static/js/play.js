@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetElementIndex = lotteryData.length + winnerIndex; 
             const targetElement = rouletteDiv.children[targetElementIndex];
             
-            // --- ЛОГИКА АНИМАЦИИ С ПОМОЩЬЮ ANIME.JS ---
+            // --- ОБНОВЛЕННАЯ И ПРОВЕРЕННАЯ ЛОГИКА АНИМАЦИИ ---
 
             // 1. Рассчитываем базовую позицию для остановки (в центре)
             const targetPosition = targetElement.offsetLeft + targetElement.offsetWidth / 2;
@@ -37,7 +37,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // 2. Искусственно добавляем несколько оборотов для эффекта
             const oneTurnDistance = rouletteDiv.scrollWidth / 3;
             const randomTurns = Math.floor(Math.random() * 2) + 3; // от 3 до 4 оборотов
-            const startPosition = finalPosition - (oneTurnDistance * randomTurns);
+            
+            // --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+            // В прошлый раз я по ошибке оставил здесь минус. Теперь здесь ПЛЮС.
+            // Это заставит анимацию двигаться в правильном направлении: справа налево.
+            const startPosition = finalPosition + (oneTurnDistance * randomTurns);
 
             // 3. Запускаем анимацию с помощью Anime.js
             anime({

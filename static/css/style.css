@@ -188,7 +188,7 @@ button:disabled {
     flex-shrink: 0;
     /* --- ИЗМЕНЕНИЕ ЗДЕСЬ --- */
     /* Уменьшаем размытие, чтобы создать эффект движения, а не статики */
-    filter: blur(4px); 
+    filter: blur(8px); 
     transform: scale(0.9);
     opacity: 0.7;
     /* Замедленный transition, чтобы картинка проявлялась плавно в конце */
