@@ -35,6 +35,11 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    <script>
+        // Передаем готовые данные о фоне, полученные от сервера, в JavaScript
+        var backgroundPhotos = {{ background_photos|tojson }};
+    </script>
     <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 </body>
 </html>

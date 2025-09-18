@@ -43,7 +43,6 @@
 
     {% if not result %}
         <script>
-            // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
             // Правильно преобразуем список объектов из базы данных в JSON для JavaScript
             const lotteryData = [
                 {% for movie in lottery.movies %}
@@ -57,6 +56,11 @@
             const drawUrl = "{{ url_for('draw_winner', lottery_id=lottery.id) }}";
         </script>
         <script src="{{ url_for('static', filename='js/play.js') }}"></script>
+        
+        <script>
+            // Передаем готовые данные о фоне, полученные от сервера, в JavaScript
+            var backgroundPhotos = {{ background_photos|tojson }};
+        </script>
         <script src="{{ url_for('static', filename='js/background.js') }}"></script>
     {% endif %}
 </body>

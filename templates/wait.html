@@ -38,10 +38,6 @@
     <script>
         // Передаем ID лотереи в JavaScript для проверки результата
         const lotteryId = {{ lottery_id|tojson }};
-        
-        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-        // Заменяем 'const' на 'var', чтобы сделать переменную глобальной и видимой для background.js
-        var lottery = {{ lottery_for_js|tojson }};
     </script>
     <script>
         // Этот скрипт будет работать только на этой странице
@@ -92,6 +88,11 @@
                 setTimeout(() => { e.target.textContent = 'Копировать'; }, 2000);
             });
         });
+    </script>
+
+    <script>
+        // Передаем готовые данные о фоне, полученные от сервера, в JavaScript
+        var backgroundPhotos = {{ background_photos|tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 </body>
