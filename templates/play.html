@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
 </head>
 <body>
     <div class="background-rotator"></div>
@@ -43,7 +45,6 @@
 
     {% if not result %}
         <script>
-            // Правильно преобразуем список объектов из базы данных в JSON для JavaScript
             const lotteryData = [
                 {% for movie in lottery.movies %}
                     {
@@ -58,7 +59,6 @@
         <script src="{{ url_for('static', filename='js/play.js') }}"></script>
         
         <script>
-            // Передаем готовые данные о фоне, полученные от сервера, в JavaScript
             var backgroundPhotos = {{ background_photos|tojson }};
         </script>
         <script src="{{ url_for('static', filename='js/background.js') }}"></script>
