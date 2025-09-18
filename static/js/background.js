@@ -1,34 +1,53 @@
 // static/js/background.js
 
 document.addEventListener('DOMContentLoaded', () => {
+    // --- ОТЛАДОЧНОЕ СООБЩЕНИЕ 1 ---
+    console.log("background.js: Скрипт запущен.");
+
     const rotator = document.querySelector('.background-rotator');
-    if (!rotator) return;
+    if (!rotator) {
+        console.error("background.js: ОШИБКА - не найден контейнер .background-rotator!");
+        return;
+    }
 
     let posters = [];
     
-    // Эта часть, как и раньше, универсально собирает все доступные постеры
+    // Универсальный сбор постеров
     if (typeof movies !== 'undefined' && Array.isArray(movies)) {
+        console.log("background.js: Найден массив 'movies'.");
         posters = movies.map(m => m.poster).filter(Boolean);
     } else if (typeof lotteryData !== 'undefined' && Array.isArray(lotteryData)) {
+        console.log("background.js: Найден массив 'lotteryData'.");
         posters = lotteryData.map(m => m.poster).filter(Boolean);
     } else if (typeof lottery !== 'undefined' && lottery.movies) {
+        console.log("background.js: Найден объект 'lottery' с фильмами.");
         posters = lottery.movies.map(m => m.poster).filter(Boolean);
     }
     
-    if (posters.length === 0) return;
+    // --- ОТЛАДОЧНОЕ СООБЩЕНИЕ 2 ---
+    console.log(`background.js: Найдено ${posters.length} постеров для фона.`);
+    // Если массив не пустой, выводим его содержимое для проверки
+    if (posters.length > 0) {
+        console.log(posters);
+    }
+    
+    if (posters.length === 0) {
+        console.warn("background.js: Постеры не найдены, работа скрипта завершена.");
+        return;
+    }
 
     // Перемешиваем массив постеров для большего разнообразия
     posters.sort(() => Math.random() - 0.5);
 
     let posterIndex = 0;
     let zIndexCounter = 1;
-    const MAX_PHOTOS = 15; // Максимальное количество фото на экране одновременно
+    const MAX_PHOTOS = 15;
 
     // Функция, которая добавляет одно фото на фон
     const addPhotoToBackground = () => {
-        if (posters.length === 0) return;
+        // --- ОТЛАДОЧНОЕ СООБЩЕНИЕ 3 ---
+        console.log(`background.js: Добавляю фото #${posterIndex + 1} на фон.`);
 
-        // Если фото на экране слишком много, удаляем самое старое
         if (rotator.children.length >= MAX_PHOTOS) {
             rotator.removeChild(rotator.children[0]);
         }
@@ -38,31 +57,24 @@ document.addEventListener('DOMContentLoaded', () => {
         div.className = 'bg-image';
         div.style.backgroundImage = `url(${imageUrl})`;
 
-        // --- Генерируем случайные параметры для фото ---
-        const randomTop = Math.random() * 60 + 10; // от 10% до 70% от высоты
-        const randomLeft = Math.random() * 70 + 5; // от 5% до 75% от ширины
-        const randomRotate = Math.random() * 40 - 20; // от -20 до +20 градусов
+        const randomTop = Math.random() * 60 + 10;
+        const randomLeft = Math.random() * 70 + 5;
+        const randomRotate = Math.random() * 40 - 20;
         
         div.style.top = `${randomTop}%`;
         div.style.left = `${randomLeft}%`;
-        div.style.zIndex = zIndexCounter++; // Каждое новое фото будет поверх старых
-
-        // Устанавливаем финальную трансформацию для анимации
+        div.style.zIndex = zIndexCounter++;
         div.style.setProperty('--final-transform', `rotate(${randomRotate}deg) scale(1)`);
         
         rotator.appendChild(div);
 
-        // Добавляем класс, который запускает анимацию "падения" из style.css
-        // Небольшая задержка, чтобы браузер успел отрисовать элемент перед анимацией
         setTimeout(() => {
             div.classList.add('falling');
         }, 10);
 
-        // Переходим к следующему постеру, зацикливая массив
         posterIndex = (posterIndex + 1) % posters.length;
     };
 
-    // Запускаем процесс: добавляем по одному фото каждые 4 секунды
-    addPhotoToBackground(); // Добавляем первое фото сразу
+    addPhotoToBackground();
     setInterval(addPhotoToBackground, 4000);
 });
