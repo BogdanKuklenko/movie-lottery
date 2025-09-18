@@ -6,10 +6,12 @@
     <title>Кино-лотерея: Галерея результатов</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body class="gallery-body">
+
+    <div class="background-rotator"></div>
 
     <header class="gallery-header">
         <h1>Галерея Лотерей</h1>
@@ -69,5 +71,20 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/history.js') }}"></script>
+    
+    <script>
+        // Собираем все постеры со всех лотерей на странице для фона
+        var movies = [];
+        const addedPosters = new Set(); // Используем Set, чтобы избежать дубликатов
+        {% for id, lottery in lotteries.items() %}
+            {% for movie in lottery.movies %}
+                {% if movie.poster and not movie.poster in addedPosters %}
+                    movies.push({ poster: "{{ movie.poster|safe }}" });
+                    addedPosters.add("{{ movie.poster|safe }}");
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    </script>
+    <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 </body>
 </html>
