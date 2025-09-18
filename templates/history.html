@@ -74,18 +74,17 @@
     
     <script>
         // Собираем все постеры со всех лотерей на странице для фона
-        var movies = [];
-        const addedPosters = new Set(); 
-        
-        // --- ИСПРАВЛЕННЫЙ ЦИКЛ для сбора постеров ---
-        {% for lottery in lotteries %}
-            {% for movie in lottery.movies %}
-                {% if movie.poster and not addedPosters.has(movie.poster) %}
-                    movies.push({ poster: "{{ movie.poster|safe }}" });
-                    addedPosters.add("{{ movie.poster|safe }}");
-                {% endif %}
+        const allPosters = [
+            {% for lottery in lotteries %}
+                {% for movie in lottery.movies %}
+                    {% if movie.poster %}
+                        "{{ movie.poster|safe }}",
+                    {% endif %}
+                {% endfor %}
             {% endfor %}
-        {% endfor %}
+        ];
+        // Убираем дубликаты и создаем нужный формат для background.js
+        var movies = [...new Set(allPosters)].map(posterUrl => ({ poster: posterUrl }));
     </script>
     <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 </body>
