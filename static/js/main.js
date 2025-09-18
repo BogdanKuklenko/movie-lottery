@@ -32,13 +32,17 @@ document.addEventListener('DOMContentLoaded', () => {
             movieListDiv.appendChild(movieCard);
         });
         
-        // Добавляем обработчики для кнопок удаления
         document.querySelectorAll('.remove-btn').forEach(button => {
             button.addEventListener('click', (e) => {
                 const indexToRemove = parseInt(e.target.dataset.index, 10);
                 movies.splice(indexToRemove, 1);
-                renderMovieList(); // Перерисовываем список
-                updateCreateButtonState(); // Обновляем состояние кнопки
+                renderMovieList();
+                updateCreateButtonState();
+
+                // --- ИЗМЕНЕНИЕ 1: Обновляем фон после удаления фильма ---
+                if (typeof window.updateDynamicBackground === 'function') {
+                    window.updateDynamicBackground(movies);
+                }
             });
         });
     };
@@ -67,6 +71,12 @@ document.addEventListener('DOMContentLoaded', () => {
             movies.push(movieData);
             renderMovieList();
             updateCreateButtonState();
+            
+            // --- ИЗМЕНЕНИЕ 2: Обновляем фон после добавления фильма ---
+            if (typeof window.updateDynamicBackground === 'function') {
+                window.updateDynamicBackground(movies);
+            }
+
             movieInput.value = '';
 
         } catch (error) {
@@ -84,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- ОБНОВЛЕННАЯ ЛОГИКА СОЗДАНИЯ ЛОТЕРЕИ ---
     createLotteryBtn.addEventListener('click', async () => {
         createLotteryBtn.disabled = true;
         createLotteryBtn.textContent = 'Перенаправление...';
@@ -98,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
 
-            // Если сервер вернул ссылку для перенаправления - переходим по ней
             if (data.wait_url) {
                 window.location.href = data.wait_url;
             }

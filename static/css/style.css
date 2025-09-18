@@ -20,27 +20,25 @@ body {
     color: var(--text-color);
     margin: 0;
     padding: 20px;
-    overflow-x: hidden; /* Предотвращаем горизонтальную прокрутку */
+    overflow-x: hidden;
 }
 
-/* --- НОВЫЕ СТИЛИ ДЛЯ СКРОЛЛБАРА --- */
-/* Работает в Chrome, Edge, Safari и других Webkit-браузерах */
+/* --- СТИЛИ ДЛЯ СКРОЛЛБАРА --- */
 body::-webkit-scrollbar, .modal-content::-webkit-scrollbar {
-  width: 8px; /* Ширина скроллбара */
+  width: 8px;
 }
 body::-webkit-scrollbar-track, .modal-content::-webkit-scrollbar-track {
-  background: transparent; /* Фон делаем прозрачным */
+  background: transparent;
 }
 body::-webkit-scrollbar-thumb, .modal-content::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2); /* Полупрозрачный ползунок */
+  background-color: rgba(255, 255, 255, 0.2);
   border-radius: 10px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 body::-webkit-scrollbar-thumb:hover, .modal-content::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.4); /* Делаем чуть ярче при наведении */
+  background-color: rgba(255, 255, 255, 0.4);
 }
-
 
 .container {
     width: 100%;
@@ -57,6 +55,8 @@ body::-webkit-scrollbar-thumb:hover, .modal-content::-webkit-scrollbar-thumb:hov
 
 header {
     margin-bottom: 30px;
+    position: relative; /* Чтобы быть над фоном */
+    z-index: 1;
 }
 header h1 {
     color: var(--primary-color);
@@ -174,12 +174,52 @@ button:disabled {
 .result-card img { max-width: 250px; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); }
 .result-card.waiting .loader { margin-top: 20px; }
 
+
+/* --- СТИЛИ ДЛЯ ФОНА "РАЗБРОСАННЫЕ ФОТО" --- */
+.background-rotator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0; /* ИЗМЕНЕНИЕ ЗДЕСЬ: фон теперь выше body, но ниже контента */
+    overflow: hidden;
+}
+.bg-image {
+    position: absolute;
+    width: 20vw;
+    min-width: 150px;
+    max-width: 250px;
+    height: auto;
+    aspect-ratio: 2 / 3;
+    background-size: cover;
+    background-position: center;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+    filter: blur(5px) brightness(0.5);
+    opacity: 0;
+    transform: var(--final-transform, scale(1));
+}
+@keyframes fall-in {
+    from {
+        transform: translateY(-100vh) rotate(-540deg) scale(2);
+        opacity: 0;
+    }
+    to {
+        transform: var(--final-transform);
+        opacity: 1;
+    }
+}
+.bg-image.falling {
+    animation: fall-in 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
 /* --- СТИЛИ ДЛЯ СТРАНИЦЫ-ГАЛЕРЕИ И МОДАЛЬНОГО ОКНА --- */
 .gallery-body { padding: 0; }
-.gallery-header { padding: 20px; text-align: center; }
-.history-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; }
-.gallery-item, .waiting-card { position: relative; overflow: hidden; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); aspect-ratio: 2 / 3; transition: transform 0.3s ease; /* Плавный переход для анимации */ }
-.gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease, filter 0.4s ease; animation: reveal 0.5s ease-out forwards; /* Анимация появления постера */ }
+.gallery-header { padding: 20px; text-align: center; position: relative; z-index: 1; } /* Добавлено позиционирование */
+.history-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; position: relative; z-index: 1; } /* Добавлено позиционирование */
+.gallery-item, .waiting-card { position: relative; overflow: hidden; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); aspect-ratio: 2 / 3; transition: transform 0.3s ease; }
+.gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease, filter 0.4s ease; animation: reveal 0.5s ease-out forwards; }
 .gallery-item:hover img { transform: scale(1.05); filter: brightness(1.1); }
 .date-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); color: white; padding: 20px 10px 10px; font-size: 14px; font-weight: 700; text-align: left; transition: opacity 0.4s; pointer-events: none; }
 .gallery-item:hover .date-overlay, .waiting-card:hover .date-overlay { opacity: 0; }
@@ -187,8 +227,8 @@ button:disabled {
 
 .waiting-card { background-color: #2b2b2b; display: flex; justify-content: center; align-items: center; text-align: center; color: #adb5bd; transition: background-color 0.4s; }
 .waiting-card:hover { background-color: #343a40; }
-.waiting-content { transition: opacity 0.3s ease-out; /* Плавное исчезновение контента */ }
-.waiting-card.is-updating .waiting-content { opacity: 0; } /* Скрываем контент при обновлении */
+.waiting-content { transition: opacity 0.3s ease-out; }
+.waiting-card.is-updating .waiting-content { opacity: 0; }
 .waiting-content .loader-small { border: 3px solid #6c757d; border-top: 3px solid var(--primary-color); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
 .waiting-content span { font-weight: 700; }
 
@@ -211,7 +251,6 @@ button:disabled {
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes zoomIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
-/* НОВАЯ АНИМАЦИЯ для плавного появления постера */
 @keyframes reveal { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
 @media (max-width: 700px) {
