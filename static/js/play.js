@@ -29,19 +29,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetElementIndex = lotteryData.length + winnerIndex; 
             const targetElement = rouletteDiv.children[targetElementIndex];
             
+            // --- ПОЛНОСТЬЮ ОБНОВЛЕННАЯ ЛОГИКА АНИМАЦИИ ---
+
+            // 1. Рассчитываем базовую позицию для остановки
             const targetPosition = targetElement.offsetLeft + targetElement.offsetWidth / 2;
             const centerPosition = rouletteContainer.offsetWidth / 2;
-            const finalPosition = -(targetPosition - centerPosition);
+            let finalPosition = -(targetPosition - centerPosition);
+
+            // 2. Искусственно удлиняем прокрутку, если она слишком короткая
+            // Добавляем от 2 до 4 полных оборотов рулетки для "разгона"
+            const oneTurnDistance = rouletteDiv.scrollWidth / 3; // Ширина одной копии массива фильмов
+            const randomTurns = Math.floor(Math.random() * 3) + 2; // от 2 до 4
+            finalPosition -= oneTurnDistance * randomTurns;
             
-            // Запускаем анимацию
+            // 3. ЗАПУСКАЕМ АНИМАЦИЮ, меняя transform. CSS сделает плавный переход.
             rouletteDiv.style.transform = `translateX(${finalPosition}px)`;
             
-            // Ждем, пока барабан почти остановится, и только потом проявляем картинку
+            // 4. Ждем, пока барабан почти остановится, и только потом проявляем картинку
             setTimeout(() => {
                 targetElement.classList.add('winner');
-            }, 4000); // Анимация в CSS длится 5с, проявляем за 1с до конца
+            }, 4500); // Анимация длится 5с, проявляем за 0.5с до конца
 
-            // Ждем завершения всей CSS-анимации, чтобы показать финальное окно
+            // 5. Ждем завершения всей CSS-анимации, чтобы показать финальное окно
             setTimeout(() => {
                 preDrawDiv.style.transition = 'opacity 0.5s ease-out';
                 preDrawDiv.style.opacity = '0';

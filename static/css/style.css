@@ -172,30 +172,16 @@ button:disabled {
     overflow: hidden;
     margin: 30px 0;
     position: relative;
-}
-.roulette-container:before,
-.roulette-container:after {
-    content: '';
-    position: absolute;
-    top: 0;
-    height: 100%;
-    width: 15%;
-    z-index: 2;
-    pointer-events: none;
-}
-.roulette-container:before {
-    left: 0;
-    background: linear-gradient(to right, var(--card-bg-color) 20%, transparent);
-}
-.roulette-container:after {
-    right: 0;
-    background: linear-gradient(to left, var(--card-bg-color) 20%, transparent);
+    /* Убираем рамку и добавляем маску */
+    -webkit-mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
 }
 
 .roulette {
     display: flex;
     gap: 15px;
-    transition: transform 5s cubic-bezier(0.2, 0.85, 0.25, 1);
+    /* Анимация с резким стартом и очень плавным торможением */
+    transition: transform 5s cubic-bezier(0.15, 1, 0.3, 1);
 }
 
 .roulette img {
@@ -205,7 +191,8 @@ button:disabled {
     filter: blur(20px) grayscale(50%);
     transform: scale(0.9);
     opacity: 0.7;
-    transition: filter 1s ease-out, transform 1s ease-out, opacity 1s ease-out;
+    /* Замедленный transition, чтобы картинка проявлялась плавно в конце */
+    transition: filter 1s ease-out 0.2s, transform 1s ease-out 0.2s, opacity 1s ease-out 0.2s;
 }
 .roulette img.winner {
     filter: blur(0) grayscale(0%);
