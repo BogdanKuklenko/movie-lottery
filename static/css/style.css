@@ -59,7 +59,7 @@ header {
 header h1 {
     color: var(--primary-color);
     margin-bottom: 10px;
-    transition: font-size 0.3s;
+    transition: font-size: 0.3s;
 }
 header p {
     color: #adb5bd;
