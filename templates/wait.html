@@ -15,7 +15,7 @@
         <header>
             <h1>Лотерея создана!</h1>
             <p>Теперь дело за вашим другом. Отправьте ему ссылку ниже.</p>
-            <a href="{{ url_for('history') }}" class="history-link">Перейти в галерею лотерей &rarr;</a>
+            <a href="{{ url_for('history') }}" class="nav-button">Перейти в галерею</a>
         </header>
 
         <div class="link-box">
@@ -36,8 +36,10 @@
     </div>
 
     <script>
-        // Передаем ID лотереи в JavaScript
+        // Передаем ID лотереи в JavaScript для проверки результата
         const lotteryId = {{ lottery_id|tojson }};
+        // ИЗМЕНЕНИЕ 2: Передаем данные о лотерее для скрипта фона
+        const lottery = {{ lottery|tojson }};
     </script>
     <script>
         // Этот скрипт будет работать только на этой странице
@@ -47,7 +49,7 @@
             const telegramShareBtn = document.getElementById('telegram-share-btn-wait');
             let pollInterval = null;
 
-            // --- Логика для кнопки "Поделиться" ---
+            // Логика для кнопки "Поделиться"
             const playUrl = playUrlInput.value;
             const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
             const url = encodeURIComponent(playUrl);
@@ -90,5 +92,6 @@
             });
         });
     </script>
+    <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 </body>
 </html>
