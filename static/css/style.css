@@ -172,7 +172,6 @@ button:disabled {
     overflow: hidden;
     margin: 30px 0;
     position: relative;
-    /* Убираем рамку и добавляем маску */
     -webkit-mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
     mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
 }
@@ -180,21 +179,24 @@ button:disabled {
 .roulette {
     display: flex;
     gap: 15px;
-    /* УДАЛЯЕМ transition, вся анимация будет в JS */
+    /* СТРОКА TRANSITION УДАЛЕНА ОТСЮДА, ЧТОБЫ ИЗБЕЖАТЬ КОНФЛИКТА С JAVASCRIPT */
 }
 
 .roulette img {
     height: 180px;
     border-radius: 8px;
     flex-shrink: 0;
-    filter: blur(20px) grayscale(50%);
+    /* --- ИЗМЕНЕНИЕ ЗДЕСЬ --- */
+    /* Уменьшаем размытие, чтобы создать эффект движения, а не статики */
+    filter: blur(4px); 
     transform: scale(0.9);
     opacity: 0.7;
     /* Замедленный transition, чтобы картинка проявлялась плавно в конце */
     transition: filter 1s ease-out 0.2s, transform 1s ease-out 0.2s, opacity 1s ease-out 0.2s;
 }
 .roulette img.winner {
-    filter: blur(0) grayscale(0%);
+    /* --- ИЗМЕНЕНИЕ ЗДЕСЬ --- */
+    filter: blur(0); /* Убираем размытие для победителя */
     transform: scale(1.1);
     opacity: 1;
 }
