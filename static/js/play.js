@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const drawButton = document.getElementById('draw-button');
     const preDrawDiv = document.getElementById('pre-draw');
     const resultDiv = document.getElementById('result-display');
+    const rouletteContainer = document.querySelector('.roulette-container');
     const rouletteDiv = document.querySelector('.roulette');
 
     // Сразу блокируем кнопку, пока картинки не загрузятся
@@ -46,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Не удалось провести розыгрыш');
 
             const winner = await response.json();
-            const rouletteContainer = document.querySelector('.roulette-container');
+            
             const winnerIndex = lotteryData.findIndex(m => m.name === winner.name);
 
             // Выбираем случайный "победный" слот из последних копий, чтобы барабан прокрутился достаточно далеко
@@ -67,11 +68,11 @@ document.addEventListener('DOMContentLoaded', () => {
             anime({
                 targets: rouletteContainer,
                 scrollLeft: finalPosition,
-                duration: 7000,
-                easing: 'easeOutQuint',
+                duration: 6000, // --- ИЗМЕНЕНИЕ: Уменьшили общую длительность ---
+                easing: 'easeOutCubic', // --- ИЗМЕНЕНИЕ: Сделали остановку чуть резче ---
 
                 update: function(anim) {
-                    if (anim.progress > 95) {
+                    if (anim.progress > 90) { // Проявляем победителя чуть раньше
                          if (!targetElement.classList.contains('winner')) {
                              targetElement.classList.add('winner');
                         }
@@ -84,13 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     preDrawDiv.style.opacity = '0';
                     document.body.classList.add('no-scroll');
 
+                    // --- ИЗМЕНЕНИЕ: Уменьшили задержку перед показом результата ---
                     setTimeout(() => {
                         preDrawDiv.style.display = 'none';
                         document.getElementById('result-poster').src = winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image';
                         document.getElementById('result-name').textContent = winner.name;
                         document.getElementById('result-year').textContent = winner.year;
                         resultDiv.style.display = 'flex';
-                    }, 500);
+                    }, 250);
                 }
             });
 
