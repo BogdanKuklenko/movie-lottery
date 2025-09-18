@@ -38,8 +38,10 @@
     <script>
         // Передаем ID лотереи в JavaScript для проверки результата
         const lotteryId = {{ lottery_id|tojson }};
-        // ИЗМЕНЕНИЕ 2: Передаем данные о лотерее для скрипта фона
-        const lottery = {{ lottery|tojson }};
+        
+        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        // Теперь используем новую, безопасную для JSON переменную
+        const lottery = {{ lottery_for_js|tojson }};
     </script>
     <script>
         // Этот скрипт будет работать только на этой странице
@@ -54,7 +56,6 @@
             const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
             const url = encodeURIComponent(playUrl);
             telegramShareBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
-
 
             const checkResult = async () => {
                 try {

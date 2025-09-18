@@ -15,7 +15,6 @@ from flask_sqlalchemy import SQLAlchemy
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# --- НОВАЯ КОНФИГУРАЦИЯ БАЗЫ ДАННЫХ ---
 db_uri = os.environ.get('DATABASE_URL')
 if db_uri and db_uri.startswith("postgres://"):
     db_uri = db_uri.replace("postgres://", "postgresql://", 1)
@@ -23,7 +22,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- НОВЫЕ МОДЕЛИ ДАННЫХ ---
+# --- Модели Данных ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -55,17 +54,10 @@ def get_movie_data_from_kinopoisk(query):
         response = requests.get(search_url, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()
-        if 'docs' in data and data['docs']:
-            movie = data['docs'][0]
-        elif 'id' in data:
-            movie = data
-        else:
-            return None
-        return {
-            "name": movie.get('name', 'Название не найдено'),
-            "poster": movie.get('poster', {}).get('url') if movie.get('poster') else None,
-            "year": movie.get('year', '')
-        }
+        if 'docs' in data and data['docs']: movie = data['docs'][0]
+        elif 'id' in data: movie = data
+        else: return None
+        return { "name": movie.get('name', 'Название не найдено'), "poster": movie.get('poster', {}).get('url'), "year": movie.get('year', '') }
     except requests.exceptions.RequestException as e:
         print(f"Ошибка при запросе к API Кинопоиска: {e}")
         return None
@@ -84,14 +76,11 @@ def index():
 
 @app.route('/fetch-movie', methods=['POST'])
 def get_movie_info():
-    # ИСПРАВЛЕНИЕ ОШИБКИ: теперь функция правильно вызывает get_movie_data_from_kinopoisk
     query = request.json.get('query')
     if not query: return jsonify({"error": "Пустой запрос"}), 400
     movie_data = get_movie_data_from_kinopoisk(query)
-    if movie_data:
-        return jsonify(movie_data)
-    else:
-        return jsonify({"error": "Фильм не найден"}), 404
+    if movie_data: return jsonify(movie_data)
+    else: return jsonify({"error": "Фильм не найден"}), 404
 
 @app.route('/create', methods=['POST'])
 def create_lottery():
@@ -112,8 +101,14 @@ def create_lottery():
 def wait_for_result(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
-    # Передаем весь объект lottery в шаблон
-    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url, lottery=lottery)
+    
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    # Создаем простой словарь для передачи в JavaScript, чтобы избежать ошибки сериализации
+    lottery_data_for_js = {
+        "movies": [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies]
+    }
+    
+    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url, lottery_for_js=lottery_data_for_js)
 
 @app.route('/history')
 def history():
@@ -123,7 +118,6 @@ def history():
 @app.route('/l/<lottery_id>')
 def play_lottery(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
-    # Создаем объект result для шаблона, чтобы сохранить совместимость
     result_obj = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
     return render_template('play.html', lottery=lottery, result=result_obj)
 
@@ -151,13 +145,16 @@ def get_result_data(lottery_id):
         "play_url": play_url
     })
 
-@app.route('/init-db/super-secret-key-for-db-init-12345')
-def init_db():
-    with app.app_context():
-        db.create_all()
-    return "Таблицы успешно созданы в базе данных!"
+# --- ВРЕМЕННЫЙ МАРШРУТ (ЗАКОММЕНТИРОВАН) ---
+# Этот маршрут больше не нужен, так как таблицы в базе данных уже созданы.
+# Его можно будет полностью удалить позже.
+# @app.route('/init-db/super-secret-key-for-db-init-12345')
+# def init_db():
+#     with app.app_context():
+#         db.create_all()
+#     return "Таблицы успешно созданы в базе данных!"
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
+    # with app.app_context():
+    #     db.create_all()
     app.run(debug=True, host='0.0.0.0', port=5000)
