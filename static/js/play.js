@@ -5,12 +5,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultDiv = document.getElementById('result-display');
     const rouletteDiv = document.querySelector('.roulette');
 
-    // Заполняем "рулетку" постерами для анимации (тройной набор для бесконечного цикла)
-    const animationMovies = [...lotteryData, ...lotteryData, ...lotteryData];
-    animationMovies.forEach(movie => {
+    // Сразу блокируем кнопку, пока картинки не загрузятся
+    drawButton.disabled = true;
+    drawButton.textContent = 'Загрузка...';
+
+    // Создаем достаточное количество копий для плавной прокрутки
+    const copies = 5;
+    const totalSlots = lotteryData.length * copies;
+    let finalMovies = [];
+    for (let i = 0; i < totalSlots; i++) {
+        finalMovies.push(lotteryData[i % lotteryData.length]);
+    }
+
+    const imageLoadPromises = [];
+
+    finalMovies.forEach(movie => {
         const img = document.createElement('img');
         img.src = movie.poster || 'https://via.placeholder.com/100x150.png?text=No+Image';
         rouletteDiv.appendChild(img);
+
+        const promise = new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = resolve; // Считаем ошибку загрузки тоже "завершением"
+        });
+        imageLoadPromises.push(promise);
+    });
+
+    // Ждем, пока ВСЕ картинки загрузятся
+    Promise.all(imageLoadPromises).then(() => {
+        drawButton.disabled = false;
+        drawButton.textContent = 'Узнать свою судьбу!';
     });
 
     drawButton.addEventListener('click', async () => {
@@ -24,56 +48,51 @@ document.addEventListener('DOMContentLoaded', () => {
             const winner = await response.json();
             const rouletteContainer = document.querySelector('.roulette-container');
             const winnerIndex = lotteryData.findIndex(m => m.name === winner.name);
-            const targetElementIndex = lotteryData.length + winnerIndex;
+
+            // Выбираем случайный "победный" слот из последних копий, чтобы барабан прокрутился достаточно далеко
+            const winningCopyIndex = copies - 2;
+            const targetElementIndex = (lotteryData.length * winningCopyIndex) + winnerIndex;
             const targetElement = rouletteDiv.children[targetElementIndex];
 
-            // --- НОВАЯ ЛОГИКА АНИМАЦИИ ---
-
-            // 1. Запускаем бесконечное вращение
-            rouletteDiv.classList.add('is-spinning');
-
-            // 2. Через несколько секунд начинаем остановку
-            setTimeout(() => {
-                // Вычисляем финальную позицию для победителя
-                const oneTurnDistance = rouletteDiv.scrollWidth / 3;
-                const targetPosition = targetElement.offsetLeft + targetElement.offsetWidth / 2;
-                const centerPosition = rouletteContainer.offsetWidth / 2;
-                // Важно: мы берем остаток от деления текущей позиции на ширину блока,
-                // чтобы остановка была плавной из любой точки бесконечной прокрутки.
-                const currentOffset = (targetPosition - centerPosition) % oneTurnDistance;
-                const finalPosition = -(currentOffset + oneTurnDistance);
-
-                // Убираем анимацию бесконечной прокрутки
-                rouletteDiv.classList.remove('is-spinning');
-                
-                // Моментально устанавливаем текущее положение, чтобы избежать рывка
-                const currentTransform = window.getComputedStyle(rouletteDiv).transform;
-                rouletteDiv.style.transform = currentTransform;
-
-                // Включаем анимацию плавной остановки и задаем конечную точку
-                setTimeout(() => {
-                    rouletteDiv.classList.add('is-stopping');
-                    rouletteDiv.style.transform = `translateX(${finalPosition}px)`;
-                    targetElement.classList.add('winner');
-                }, 10); // Микро-задержка для применения стилей
-
-            }, 2500); // Время бесконечного вращения (в миллисекундах)
+            // Рассчитываем финальную позицию для остановки
+            const targetPosition = targetElement.offsetLeft + (targetElement.offsetWidth / 2);
+            const centerPosition = rouletteContainer.offsetWidth / 2;
+            let finalPosition = targetPosition - centerPosition;
+            
+            // Добавляем случайное смещение для разнообразия остановки
+            finalPosition += Math.random() * (targetElement.offsetWidth * 0.4) - (targetElement.offsetWidth * 0.2);
 
 
-            // 3. После завершения всей анимации (вращение + остановка) показываем результат
-            setTimeout(() => {
-                preDrawDiv.style.transition = 'opacity 0.5s ease-out';
-                preDrawDiv.style.opacity = '0';
-                document.body.classList.add('no-scroll');
+            // Запускаем анимацию прокрутки
+            anime({
+                targets: rouletteContainer,
+                scrollLeft: finalPosition,
+                duration: 7000,
+                easing: 'easeOutQuint',
 
-                setTimeout(() => {
-                    preDrawDiv.style.display = 'none';
-                    document.getElementById('result-poster').src = winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image';
-                    document.getElementById('result-name').textContent = winner.name;
-                    document.getElementById('result-year').textContent = winner.year;
-                    resultDiv.style.display = 'flex';
-                }, 500);
-            }, 6500); // 2500мс (вращение) + 4000мс (остановка)
+                update: function(anim) {
+                    if (anim.progress > 95) {
+                         if (!targetElement.classList.contains('winner')) {
+                             targetElement.classList.add('winner');
+                        }
+                    }
+                },
+
+                complete: function() {
+                    // Показываем результат
+                    preDrawDiv.style.transition = 'opacity 0.5s ease-out';
+                    preDrawDiv.style.opacity = '0';
+                    document.body.classList.add('no-scroll');
+
+                    setTimeout(() => {
+                        preDrawDiv.style.display = 'none';
+                        document.getElementById('result-poster').src = winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image';
+                        document.getElementById('result-name').textContent = winner.name;
+                        document.getElementById('result-year').textContent = winner.year;
+                        resultDiv.style.display = 'flex';
+                    }, 500);
+                }
+            });
 
         } catch (error) {
             console.error(error);

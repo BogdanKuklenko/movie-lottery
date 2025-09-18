@@ -171,7 +171,7 @@ button:disabled {
 
 .play-container p { font-size: 1.2em; }
 
-/* --- НОВЫЕ СТИЛИ РУЛЕТКИ --- */
+/* --- ФИНАЛЬНЫЕ СТИЛИ РУЛЕТКИ --- */
 .roulette-container {
     width: 100%;
     overflow: hidden;
@@ -183,23 +183,10 @@ button:disabled {
 
 .roulette {
     display: flex;
-    gap: 15px;
-}
-
-/* 1. Анимация бесконечной прокрутки */
-@keyframes infinite-scroll {
-  from { transform: translateX(0); }
-  to { transform: translateX(-33.3333%); } /* Сдвигаем на 1/3 (ширину одного блока фильмов) */
-}
-
-/* 2. Класс для запуска бесконечного вращения */
-.roulette.is-spinning {
-  animation: infinite-scroll 5s linear infinite;
-}
-
-/* 3. Класс для плавной остановки */
-.roulette.is-stopping {
-  transition: transform 4s cubic-bezier(0.2, .8, .2, 1);
+    /* Убираем все лишнее, JS будет управлять прокруткой */
+    overflow-x: visible; 
+    /* Трансформ будет управляться JS */
+    transform: translateX(0);
 }
 
 .roulette img {
@@ -211,16 +198,15 @@ button:disabled {
     opacity: 0.7;
     transition: filter 1s ease-out, transform 1s ease-out, opacity 1s ease-out;
     user-select: none;
-    pointer-events: none; /* Отключаем любые действия с картинкой */
+    pointer-events: none;
 }
-
 .roulette img.winner {
     filter: blur(0);
     transform: scale(1.1);
     opacity: 1;
 }
 
-/* ИЗМЕНЕННЫЕ СТИЛИ ДЛЯ РЕЗУЛЬТАТА */
+/* СТИЛИ ДЛЯ РЕЗУЛЬТАТА */
 .result-card {
     display: flex;
     flex-direction: column;
@@ -242,7 +228,6 @@ button:disabled {
 .result-card.waiting .loader {
     margin-top: 20px;
 }
-
 
 /* --- СТИЛИ ДЛЯ ФОНА "РАЗБРОСАННЫЕ ФОТО" --- */
 .background-rotator {
