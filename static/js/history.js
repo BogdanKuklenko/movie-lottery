@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- ЛОГИКА ВИДЖЕТА ---
     const showWidget = (movieName) => {
-        widgetMovieName.textContent = `Поиск: ${movieName}`;
+        widgetMovieName.textContent = `Загрузка: ${movieName}`;
         widgetProgressText.textContent = '...';
         widgetSpeedText.textContent = '';
         widgetEtaText.textContent = '';
@@ -76,53 +76,36 @@ document.addEventListener('DOMContentLoaded', () => {
         statusPollInterval = setInterval(poll, 3000);
     };
     
-    // --- НОВАЯ АСИНХРОННАЯ ЛОГИКА СКАЧИВАНИЯ ---
+    // --- ИСПРАВЛЕННАЯ ЛОГИКА СКАЧИВАНИЯ ---
     const handleDownloadRequest = async (lotteryId, movieName) => {
-        try {
-            // 1. Запускаем поиск и получаем ID задачи
-            showWidget(movieName);
-            const startResponse = await fetch(`/api/torrent-search/start/${lotteryId}`, { method: 'POST' });
-            const startData = await startResponse.json();
+        showWidget(movieName); // Сразу показываем виджет со статусом "Загрузка..."
 
-            if (!startData.success) {
-                alert(startData.message);
-                return;
+        try {
+            const response = await fetch(`/api/start-download/${lotteryId}`, {
+                method: 'POST'
+            });
+
+            // Эта проверка решает проблему с ошибкой: если сервер вернет HTML вместо JSON,
+            // мы перехватим это и покажем понятную ошибку вместо падения скрипта.
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                 const errorText = await response.text();
+                 console.error("Сервер вернул не JSON:", errorText);
+                 throw new Error('Произошла критическая ошибка на сервере.');
             }
             
-            // 2. Опрашиваем статус поиска, пока он не завершится
-            const jobId = startData.job_id;
-            const searchPollInterval = setInterval(async () => {
-                const statusResponse = await fetch(`/api/torrent-search/status/${jobId}`);
-                const statusData = await statusResponse.json();
+            const data = await response.json();
 
-                if (statusData.status === 'completed') {
-                    clearInterval(searchPollInterval);
-                    if (statusData.found) {
-                        // 3. Если найдено - отправляем лучший результат на скачивание
-                        const bestTorrent = statusData.best_torrent;
-                        const downloadResponse = await fetch('/api/torrent-search/download', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ url: bestTorrent.fileUrl, lottery_id: lotteryId })
-                        });
-                        const downloadData = await downloadResponse.json();
-                        alert(downloadData.message);
-                        if(downloadData.success) {
-                            // 4. Запускаем опрос статуса уже самой загрузки
-                            startTorrentStatusPolling(lotteryId, movieName);
-                        }
-                    } else {
-                        alert('Фильм не найден на трекерах.');
-                    }
-                } else if (statusData.status === 'failed') {
-                    clearInterval(searchPollInterval);
-                    alert(`Ошибка поиска: ${statusData.message}`);
-                }
-                // Если статус 'running', просто ждем следующего опроса
-            }, 5000); // Опрос каждые 5 секунд
+            alert(data.message); // Показываем пользователю ответ сервера (успех или "не найдено")
 
+            if (data.success) {
+                // Если сервер ответил, что загрузка началась, запускаем опрос статуса
+                startTorrentStatusPolling(lotteryId, movieName);
+            }
+            
         } catch (error) {
-            alert(`Критическая ошибка при запуске скачивания: ${error}`);
+            console.error('Критическая ошибка при запуске скачивания:', error);
+            alert(`Критическая ошибка при запуске скачивания: ${error.message}`);
         }
     };
     
