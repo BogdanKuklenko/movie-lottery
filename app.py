@@ -220,7 +220,10 @@ def start_download(lottery_id):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
         
         # 2. Ищем на Rutracker
-        rt = RutrackerApi(RUTRACKER_LOGIN, RUTRACKER_PASSWORD)
+        # --- ИЗМЕНЕНИЕ: Правильная инициализация и логин ---
+        rt = RutrackerApi()
+        rt.login(RUTRACKER_LOGIN, RUTRACKER_PASSWORD)
+        # ---------------------------------------------------
         search_query = f"{lottery.result_name} {lottery.result_year}"
         results = rt.search(search_query)
 
