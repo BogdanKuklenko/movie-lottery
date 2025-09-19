@@ -8,6 +8,9 @@
     --danger-color: #dc3545; /* Красный для удаления */
     --torrent-color: #007bff; /* Синий для торрента */
     --torrent-done-color: #28a745; /* Зеленый для завершенного */
+    --rating-high: #28a745; /* Зеленый для высокого рейтинга */
+    --rating-medium: #fd7e14; /* Оранжевый для среднего */
+    --rating-low: #6c757d; /* Серый для низкого */
 }
 
 html {
@@ -69,7 +72,7 @@ header {
 header h1 {
     color: var(--primary-color);
     margin-bottom: 10px;
-    transition: font-size: 0.3s;
+    transition: font-size 0.3s;
 }
 header p {
     color: #adb5bd;
@@ -174,8 +177,16 @@ button:disabled {
 .play-container {
     padding: 10px;
 }
-
 .play-container p { font-size: 1.2em; }
+
+.settings-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+    color: #adb5bd;
+}
 
 /* СТИЛИ РУЛЕТКИ */
 .roulette-container {
@@ -230,19 +241,10 @@ button:disabled {
     border-radius: 10px;
     box-shadow: 0 5px 20px rgba(0,0,0,0.5);
 }
-.result-card h2 {
-    margin: 10px 0 5px;
-}
-.result-card h3 {
-    margin: 8px 0;
-    font-size: 1.3em;
-}
-.result-card p {
-    margin: 5px 0;
-}
-.result-card.waiting .loader {
-    margin-top: 20px;
-}
+.result-card h2 { margin: 10px 0 5px; }
+.result-card h3 { margin: 8px 0; font-size: 1.3em; }
+.result-card p { margin: 5px 0; }
+.result-card.waiting .loader { margin-top: 20px; }
 
 /* СТИЛИ ДЛЯ ФОНА */
 .background-rotator { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; overflow: hidden; }
@@ -306,10 +308,67 @@ button:disabled {
 .waiting-content span { font-weight: 700; }
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(5px); }
-.modal-content { background-color: var(--card-bg-color); padding: 30px; border-radius: 15px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative; animation: zoomIn 0.3s ease-out; }
+.modal-content {
+    background-color: var(--card-bg-color);
+    padding: 30px;
+    border-radius: 15px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    animation: zoomIn 0.3s ease-out;
+}
 .close-button { position: absolute; top: 10px; right: 20px; font-size: 30px; color: #adb5bd; cursor: pointer; transition: color 0.2s; }
 .close-button:hover { color: white; }
-#modal-loser-list { text-align: left; margin-top: 20px; }
+
+.winner-card {
+    display: flex;
+    gap: 25px;
+    text-align: left;
+}
+.winner-poster {
+    flex-shrink: 0;
+    position: relative;
+}
+.winner-poster img {
+    width: 220px;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+}
+.rating-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    color: white;
+    font-weight: 700;
+    font-size: 16px;
+    backdrop-filter: blur(5px);
+    background-color: rgba(0,0,0,0.5);
+}
+.rating-badge.rating-high { background-color: rgba(40, 167, 69, 0.8); }
+.rating-badge.rating-medium { background-color: rgba(253, 126, 20, 0.8); }
+.rating-badge.rating-low { background-color: rgba(108, 117, 125, 0.8); }
+
+.winner-details h2 {
+    margin-top: 0;
+    color: var(--primary-color);
+}
+.winner-details .meta-info {
+    font-size: 14px;
+    color: #adb5bd;
+    margin-bottom: 15px;
+}
+.winner-details .description {
+    font-size: 15px;
+    line-height: 1.6;
+    color: #ced4da;
+}
+
+#modal-loser-list { text-align: left; margin-top: 25px; border-top: 1px solid #343a40; padding-top: 20px; }
 #modal-loser-list h3 { margin-bottom: 15px; }
 #modal-loser-list ul { padding-left: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 15px; }
 .loser-item { display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -324,16 +383,6 @@ button:disabled {
 @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes zoomIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
 @keyframes reveal { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-
-/* НОВЫЕ СТИЛИ ДЛЯ ВИДЖЕТА И НАСТРОЕК */
-.settings-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 20px;
-    color: #adb5bd;
-}
 
 .status-widget {
     position: fixed;

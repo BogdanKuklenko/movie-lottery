@@ -77,28 +77,47 @@ document.addEventListener('DOMContentLoaded', () => {
     dateOverlays.forEach(overlay => {
         const isoDate = overlay.dataset.date;
         if (isoDate) {
-            const date = new Date(isoDate);
-            overlay.textContent = date.toLocaleDateString('ru-RU', {
-                day: '2-digit', month: '2-digit', year: 'numeric'
-            });
+            overlay.textContent = new Date(isoDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
         }
     });
 
-    // --- ЛОГИКА МОДАЛЬНОГО ОКНА ---
+    // --- ОБНОВЛЕННАЯ ЛОГИКА МОДАЛЬНОГО ОКНА ---
     const openModal = async (lotteryId) => {
         modalOverlay.style.display = 'flex';
-        modalResultView.style.display = 'none';
-        modalWaitView.style.display = 'none';
         modalWinnerInfo.innerHTML = '<div class="loader"></div>';
-        modalLoserList.innerHTML = '';
+        modalResultView.style.display = 'block';
+        modalWaitView.style.display = 'none';
+        modalLoserListContainer.style.display = 'none';
+
+
         try {
             const response = await fetch(`/api/result/${lotteryId}`);
+            if (!response.ok) throw new Error('Ошибка сети');
             const data = await response.json();
+
             if (data.error) throw new Error(data.error);
+
+            // Отрисовываем победителя, если он есть
             if (data.result) {
                 const winner = data.result;
+                const ratingClass = winner.rating_kp >= 7 ? 'rating-high' : winner.rating_kp >= 5 ? 'rating-medium' : 'rating-low';
+                
+                modalWinnerInfo.innerHTML = `
+                    <div class="winner-card">
+                        <div class="winner-poster">
+                            <img src="${winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="Постер ${winner.name}">
+                            ${winner.rating_kp ? `<div class="rating-badge ${ratingClass}">${winner.rating_kp.toFixed(1)}</div>` : ''}
+                        </div>
+                        <div class="winner-details">
+                            <h2>${winner.name}</h2>
+                            <p class="meta-info">${winner.year || ''} / ${winner.genres || 'н/д'} / ${winner.countries || 'н/д'}</p>
+                            <p class="description">${winner.description || 'Описание отсутствует.'}</p>
+                        </div>
+                    </div>
+                `;
+
+                // Отрисовываем проигравших
                 const losers = data.movies.filter(movie => movie.name !== winner.name);
-                modalWinnerInfo.innerHTML = `<div class="result-card"><img src="${winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="Постер ${winner.name}"><h3>${winner.name}</h3><p>${winner.year}</p></div>`;
                 modalLoserList.innerHTML = '';
                 if (losers.length > 0) {
                     losers.forEach(loser => {
@@ -108,21 +127,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         modalLoserList.appendChild(li);
                     });
                     modalLoserListContainer.style.display = 'block';
-                } else {
-                    modalLoserListContainer.style.display = 'none';
                 }
-                modalResultView.style.display = 'block';
-            } else {
-                const playUrl = data.play_url;
-                modalPlayLink.value = playUrl;
-                const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
-                const url = encodeURIComponent(playUrl);
-                telegramShareBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
-                modalWaitView.style.display = 'block';
+            } else { // Если розыгрыш еще не состоялся
+                 modalResultView.style.display = 'none';
+                 modalWaitView.style.display = 'block';
+                 const playUrl = data.play_url;
+                 modalPlayLink.value = playUrl;
+                 const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
+                 const url = encodeURIComponent(playUrl);
+                 telegramShareBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
             }
         } catch (error) {
-            modalResultView.style.display = 'block';
-            modalWinnerInfo.innerHTML = `<p class="error-message">Не удалось загрузить детали лотереи.</p>`;
+            modalWinnerInfo.innerHTML = `<p class="error-message">Не удалось загрузить детали лотереи. Ошибка: ${error.message}</p>`;
             console.error(error);
         }
     };
@@ -135,9 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!data.success) throw new Error(data.message || 'Ошибка на сервере');
             
             cardElement.classList.add('is-deleting');
-            setTimeout(() => {
-                cardElement.remove();
-            }, 500);
+            setTimeout(() => cardElement.remove(), 500);
         } catch (error) {
             console.error('Ошибка при удалении лотереи:', error);
             alert('Не удалось удалить лотерею.');
@@ -169,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
             } else if (deleteButton) {
                 e.stopPropagation();
-                if (confirm('Вы уверены, что хотите удалить эту лотерею? История будет удалена навсегда.')) {
+                if (confirm('Вы уверены, что хотите удалить эту лотерею?')) {
                     deleteLottery(lotteryId, galleryItem);
                 }
             } else {
