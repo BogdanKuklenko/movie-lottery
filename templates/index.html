@@ -31,13 +31,17 @@
         <div id="movie-list" class="movie-list">
             </div>
 
+        <div class="settings-container">
+            <input type="checkbox" id="auto-download-checkbox">
+            <label for="auto-download-checkbox">Скачивать фильм автоматически после розыгрыша</label>
+        </div>
+
         <button id="create-lottery-btn" class="cta-button" disabled>Создать лотерею и перейти к ожиданию</button>
     </div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     
     <script>
-        // Передаем готовые данные о фоне, полученные от сервера, в JavaScript
         var backgroundPhotos = {{ background_photos|tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/background.js') }}"></script>

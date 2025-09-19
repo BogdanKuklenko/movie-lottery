@@ -1,6 +1,5 @@
 // static/js/main.js
 
-// Глобальный массив с фильмами
 var movies = [];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -10,6 +9,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const movieListDiv = document.getElementById('movie-list');
     const loader = document.getElementById('loader');
     const errorMessage = document.getElementById('error-message');
+    // --- НОВОЕ: Получаем доступ к галочке ---
+    const autoDownloadCheckbox = document.getElementById('auto-download-checkbox');
+
+    // --- НОВОЕ: Логика для запоминания состояния галочки ---
+    // При загрузке страницы, проверяем, что сохранено в памяти браузера
+    if (localStorage.getItem('autoDownloadEnabled') === 'true') {
+        autoDownloadCheckbox.checked = true;
+    }
+    // При каждом клике на галочку, сохраняем ее новое состояние
+    autoDownloadCheckbox.addEventListener('change', () => {
+        localStorage.setItem('autoDownloadEnabled', autoDownloadCheckbox.checked);
+    });
 
     const updateCreateButtonState = () => {
         createLotteryBtn.disabled = movies.length < 2;
@@ -37,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 movies.splice(indexToRemove, 1);
                 renderMovieList();
                 updateCreateButtonState();
-                // Старый вызов для обновления фона удален
             });
         });
     };
@@ -66,9 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
             movies.push(movieData);
             renderMovieList();
             updateCreateButtonState();
-            
-            // Старый вызов для обновления фона удален
-
             movieInput.value = '';
 
         } catch (error) {

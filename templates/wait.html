@@ -36,22 +36,36 @@
     </div>
 
     <script>
-        // Передаем ID лотереи в JavaScript для проверки результата
         const lotteryId = {{ lottery_id|tojson }};
     </script>
     <script>
-        // Этот скрипт будет работать только на этой странице
         document.addEventListener('DOMContentLoaded', () => {
             const waitResultArea = document.getElementById('wait-result-area');
             const playUrlInput = document.getElementById('play-link-wait');
             const telegramShareBtn = document.getElementById('telegram-share-btn-wait');
             let pollInterval = null;
-
-            // Логика для кнопки "Поделиться"
+            
             const playUrl = playUrlInput.value;
             const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
             const url = encodeURIComponent(playUrl);
             telegramShareBtn.href = `https://t.me/share/url?url=${url}&text=${text}`;
+
+            // --- НОВАЯ ФУНКЦИЯ ДЛЯ АВТО-ЗАГРУЗКИ ---
+            const startAutoDownload = async () => {
+                // Проверяем, включена ли галочка в памяти браузера
+                if (localStorage.getItem('autoDownloadEnabled') === 'true') {
+                    console.log('Авто-загрузка включена. Отправляю команду на скачивание...');
+                    try {
+                        const response = await fetch(`/api/start-download/${lotteryId}`, { method: 'POST' });
+                        const result = await response.json();
+                        console.log('Результат запуска скачивания:', result.message);
+                    } catch (error) {
+                        console.error('Ошибка при автоматическом запуске скачивания:', error);
+                    }
+                } else {
+                    console.log('Авто-загрузка выключена.');
+                }
+            };
 
             const checkResult = async () => {
                 try {
@@ -68,6 +82,9 @@
                             <p>${data.result.year}</p>
                         `;
                         if (pollInterval) clearInterval(pollInterval);
+                        
+                        // --- ЗАПУСКАЕМ АВТО-ЗАГРУЗКУ ПОСЛЕ ПОЯВЛЕНИЯ РЕЗУЛЬТАТА ---
+                        startAutoDownload();
                     }
                 } catch (error) {
                     console.error("Ошибка при проверке результата:", error);
@@ -89,9 +106,7 @@
             });
         });
     </script>
-
     <script>
-        // Передаем готовые данные о фоне, полученные от сервера, в JavaScript
         var backgroundPhotos = {{ background_photos|tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/background.js') }}"></script>

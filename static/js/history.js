@@ -3,8 +3,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const gallery = document.querySelector('.history-gallery');
     const modalOverlay = document.getElementById('history-modal');
-    
-    // ... (элементы модального окна без изменений) ...
     const closeButton = document.querySelector('.close-button');
     const modalResultView = document.getElementById('modal-result-view');
     const modalWaitView = document.getElementById('modal-wait-view');
@@ -13,10 +11,69 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalLoserList = document.querySelector('#modal-loser-list ul');
     const modalPlayLink = document.getElementById('modal-play-link');
     const telegramShareBtn = document.getElementById('telegram-share-btn');
-
     const dateOverlays = document.querySelectorAll('.date-overlay');
 
-    // --- 1. Форматирование дат (без изменений) ---
+    // --- ЭЛЕМЕНТЫ ДЛЯ ВИДЖЕТА ---
+    const widget = document.getElementById('torrent-status-widget');
+    const widgetHeader = widget.querySelector('.widget-header');
+    const widgetMovieName = widget.querySelector('#widget-movie-name');
+    const widgetProgressBar = widget.querySelector('#widget-progress-bar');
+    const widgetProgressText = widget.querySelector('#widget-progress-text');
+    const widgetSpeedText = widget.querySelector('#widget-speed-text');
+    const widgetEtaText = widget.querySelector('#widget-eta-text');
+    let statusPollInterval = null;
+
+    // --- ЛОГИКА ВИДЖЕТА ---
+    const showWidget = (movieName) => {
+        widgetMovieName.textContent = movieName;
+        widget.style.display = 'block';
+    };
+
+    const updateWidget = (data) => {
+        widgetProgressText.textContent = `${data.progress}%`;
+        widgetProgressBar.style.width = `${data.progress}%`;
+        widgetSpeedText.textContent = `${data.speed} МБ/с`;
+        widgetEtaText.textContent = data.eta;
+    };
+
+    widgetHeader.addEventListener('click', () => {
+        widget.classList.toggle('minimized');
+    });
+
+    const startPolling = (lotteryId, movieName) => {
+        if (statusPollInterval) clearInterval(statusPollInterval);
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`/api/torrent-status/${lotteryId}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                const torrentButton = document.querySelector(`.gallery-item[data-lottery-id="${lotteryId}"] .torrent-button`);
+                if (!torrentButton) return;
+
+                if (data.status === 'not_found' || data.status === 'error') {
+                    torrentButton.className = 'torrent-button';
+                } else {
+                    updateWidget(data);
+                    torrentButton.className = 'torrent-button'; // Reset
+                    if (data.status.includes('downloading')) {
+                        torrentButton.classList.add('status-downloading');
+                    } else if (data.status.includes('seeding') || data.status.includes('completed') || parseFloat(data.progress) >= 100) {
+                        torrentButton.classList.add('status-seeding');
+                        if (statusPollInterval) clearInterval(statusPollInterval); // Stop polling
+                    }
+                }
+            } catch (error) {
+                console.error("Ошибка при опросе статуса торрента:", error);
+                if (statusPollInterval) clearInterval(statusPollInterval);
+            }
+        };
+        poll();
+        statusPollInterval = setInterval(poll, 3000);
+    };
+
+    // --- ФОРМАТИРОВАНИЕ ДАТ ---
     dateOverlays.forEach(overlay => {
         const isoDate = overlay.dataset.date;
         if (isoDate) {
@@ -27,9 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- 2. Логика открытия модального окна (без изменений) ---
+    // --- ЛОГИКА МОДАЛЬНОГО ОКНА ---
     const openModal = async (lotteryId) => {
-        // ... (весь код функции openModal остается таким же) ...
         modalOverlay.style.display = 'flex';
         modalResultView.style.display = 'none';
         modalWaitView.style.display = 'none';
@@ -71,66 +127,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- НОВАЯ ФУНКЦИЯ ДЛЯ УДАЛЕНИЯ ЛОТЕРЕИ ---
+    // --- ЛОГИКА УДАЛЕНИЯ ---
     const deleteLottery = async (lotteryId, cardElement) => {
         try {
-            const response = await fetch(`/delete-lottery/${lotteryId}`, {
-                method: 'POST',
-            });
+            const response = await fetch(`/delete-lottery/${lotteryId}`, { method: 'POST' });
             const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.message || 'Ошибка на сервере');
-            }
-            // Плавное удаление карточки со страницы
+            if (!data.success) throw new Error(data.message || 'Ошибка на сервере');
+            
             cardElement.classList.add('is-deleting');
             setTimeout(() => {
                 cardElement.remove();
-            }, 500); // Время должно совпадать с transition в CSS
-
+            }, 500);
         } catch (error) {
             console.error('Ошибка при удалении лотереи:', error);
             alert('Не удалось удалить лотерею.');
         }
     };
 
-    // --- ОБНОВЛЕННЫЙ ОБРАБОТЧИК КЛИКОВ ПО ГАЛЕРЕЕ ---
+    // --- ОБРАБОТЧИК КЛИКОВ ПО ГАЛЕРЕЕ ---
     if (gallery) {
         gallery.addEventListener('click', (e) => {
+            const torrentButton = e.target.closest('.torrent-button');
             const deleteButton = e.target.closest('.delete-button');
-            const galleryItem = e.target.closest('.gallery-item') || e.target.closest('.waiting-card');
+            const galleryItem = e.target.closest('.gallery-item');
 
-            // Сначала проверяем, не был ли клик по кнопке "Удалить"
-            if (deleteButton && galleryItem) {
-                e.stopPropagation(); // Останавливаем открытие модального окна
-                const lotteryId = galleryItem.dataset.lotteryId;
+            if (!galleryItem) return;
+
+            const lotteryId = galleryItem.dataset.lotteryId;
+            const movieName = galleryItem.dataset.movieName;
+
+            if (torrentButton) {
+                e.stopPropagation();
+                fetch(`/api/start-download/${lotteryId}`, { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        alert(data.message);
+                        if(data.success) {
+                            showWidget(movieName);
+                            startPolling(lotteryId, movieName);
+                        }
+                    });
+            } else if (deleteButton) {
+                e.stopPropagation();
                 if (confirm('Вы уверены, что хотите удалить эту лотерею? История будет удалена навсегда.')) {
                     deleteLottery(lotteryId, galleryItem);
                 }
-            } 
-            // Если клик был не по кнопке, а по самой карточке - открываем окно
-            else if (galleryItem) {
-                const lotteryId = galleryItem.dataset.lotteryId;
+            } else {
                 openModal(lotteryId);
             }
         });
     }
 
-    // --- Логика закрытия модального окна (без изменений) ---
+    // --- ЗАКРЫТИЕ МОДАЛЬНОГО ОКНА ---
     const closeModal = () => { modalOverlay.style.display = 'none'; };
     closeButton.addEventListener('click', closeModal);
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalOverlay.style.display !== 'none') closeModal(); });
 
-    // --- Автоматическое обновление статуса (без изменений) ---
-    const startHistoryPolling = () => { /* ... */ };
-    const updateCardOnPage = (lotteryId, lotteryData) => { /* ... */ };
-    startHistoryPolling();
-});
-
-// Полный код скрытых функций для ясности
-document.addEventListener('DOMContentLoaded', () => {
-    // ... (весь код, как вверху, без изменений)
-    const startHistoryPolling_impl = () => {
+    // --- ОБНОВЛЕНИЕ СТАТУСА ОЖИДАЮЩИХ ЛОТЕРЕЙ ---
+    const startHistoryPolling = () => {
         const waitingCards = document.querySelectorAll('.waiting-card');
         if (waitingCards.length === 0) return;
         let waitingIds = Array.from(waitingCards).map(card => card.dataset.lotteryId);
@@ -144,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const response = await fetch(`/api/result/${id}`);
                     const data = await response.json();
                     if (data.result) {
-                        updateCardOnPage_impl(id, data);
+                        updateCardOnPage(id, data);
                         waitingIds = waitingIds.filter(waitingId => waitingId !== id);
                     }
                 } catch (error) {
@@ -154,17 +209,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 7000);
     };
 
-    const updateCardOnPage_impl = (lotteryId, lotteryData) => {
+    const updateCardOnPage = (lotteryId, lotteryData) => {
         const card = document.querySelector(`.waiting-card[data-lottery-id="${lotteryId}"]`);
         if (!card) return;
         card.className = 'gallery-item';
+        card.dataset.movieName = lotteryData.result.name;
         card.innerHTML = `
-            <button class="delete-button" title="Удалить лотерею">&times;</button>
+            <div class="action-buttons">
+                <button class="torrent-button" title="Скачать фильм">&#x2913;</button>
+                <button class="delete-button" title="Удалить лотерею">&times;</button>
+            </div>
             <img src="${lotteryData.result.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="${lotteryData.result.name}">
             <div class="date-overlay" data-date="${lotteryData.createdAt}">
                 ${new Date(lotteryData.createdAt).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric'})}
             </div>
         `;
     };
-    startHistoryPolling_impl();
+    
+    startHistoryPolling();
 });

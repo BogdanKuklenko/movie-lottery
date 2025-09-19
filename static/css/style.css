@@ -6,6 +6,8 @@
     --text-color: #f8f9fa; /* Светло-серый */
     --card-bg-color: #1e1e1e; /* Цвет карточек */
     --danger-color: #dc3545; /* Красный для удаления */
+    --torrent-color: #007bff; /* Синий для торрента */
+    --torrent-done-color: #28a745; /* Зеленый для завершенного */
 }
 
 html {
@@ -67,7 +69,7 @@ header {
 header h1 {
     color: var(--primary-color);
     margin-bottom: 10px;
-    transition: font-size 0.3s;
+    transition: font-size: 0.3s;
 }
 header p {
     color: #adb5bd;
@@ -175,18 +177,18 @@ button:disabled {
 
 .play-container p { font-size: 1.2em; }
 
-/* --- СТИЛИ РУЛЕТКИ --- */
+/* СТИЛИ РУЛЕТКИ */
 .roulette-container {
     width: 100%;
-    overflow-x: scroll; /* Управляем прокруткой через JS */
-    scrollbar-width: none; /* Убираем скроллбар */
-    -ms-overflow-style: none; /* Убираем скроллбар для IE/Edge */
+    overflow-x: scroll;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     position: relative;
     -webkit-mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
     mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
 }
 .roulette-container::-webkit-scrollbar {
-    display: none; /* Убираем скроллбар для Chrome/Safari */
+    display: none;
 }
 
 .roulette {
@@ -198,7 +200,7 @@ button:disabled {
     height: 180px;
     border-radius: 8px;
     flex-shrink: 0;
-    filter: blur(10px);
+    filter: blur(4px);
     transform: scale(0.9);
     opacity: 0.7;
     transition: filter 0.5s ease-out, transform 0.5s ease-out, opacity 0.5s ease-out;
@@ -211,19 +213,19 @@ button:disabled {
     opacity: 1;
 }
 
-/* --- ИЗМЕНЕННЫЕ СТИЛИ ДЛЯ РЕЗУЛЬТАТА --- */
+/* СТИЛИ ДЛЯ РЕЗУЛЬТАТА */
 .result-card {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 15px; /* Увеличили расстояние между элементами */
+    gap: 15px;
     animation: fadeIn 1s;
     margin-top: 10px;
-    min-height: 45vh; /* Задали минимальную высоту */
+    min-height: 45vh;
 }
 .result-card img {
-    max-width: 240px; /* Увеличили постер */
+    max-width: 240px;
     max-height: 320px;
     border-radius: 10px;
     box-shadow: 0 5px 20px rgba(0,0,0,0.5);
@@ -242,60 +244,36 @@ button:disabled {
     margin-top: 20px;
 }
 
+/* СТИЛИ ДЛЯ ФОНА */
+.background-rotator { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; overflow: hidden; }
+.bg-image { position: absolute; width: 20vw; min-width: 150px; max-width: 250px; height: auto; aspect-ratio: 2 / 3; background-size: cover; background-position: center; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); filter: blur(5px) brightness(0.5); opacity: 0; transform: var(--final-transform, scale(1)); }
+@keyframes fall-in { from { transform: translateY(-100vh) rotate(-540deg) scale(2); opacity: 0; } to { transform: var(--final-transform); opacity: 1; } }
+.bg-image.falling { animation: fall-in 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 
-/* --- СТИЛИ ДЛЯ ФОНА "РАЗБРОСАННЫЕ ФОТО" --- */
-.background-rotator {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 0;
-    overflow: hidden;
-}
-.bg-image {
-    position: absolute;
-    width: 20vw;
-    min-width: 150px;
-    max-width: 250px;
-    height: auto;
-    aspect-ratio: 2 / 3;
-    background-size: cover;
-    background-position: center;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-    filter: blur(5px) brightness(0.5);
-    opacity: 0;
-    transform: var(--final-transform, scale(1));
-}
-@keyframes fall-in {
-    from {
-        transform: translateY(-100vh) rotate(-540deg) scale(2);
-        opacity: 0;
-    }
-    to {
-        transform: var(--final-transform);
-        opacity: 1;
-    }
-}
-.bg-image.falling {
-    animation: fall-in 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-/* --- СТИЛИ ДЛЯ СТРАНИЦЫ-ГАЛЕРЕИ И МОДАЛЬНОГО ОКНА --- */
+/* СТИЛИ ГАЛЕРЕИ И МОДАЛЬНОГО ОКНА */
 .gallery-body { padding: 0; }
 .gallery-header { padding: 20px; text-align: center; position: relative; z-index: 1; }
 .history-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; position: relative; z-index: 1; }
 .gallery-item, .waiting-card { position: relative; overflow: hidden; cursor: pointer; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); aspect-ratio: 2 / 3; transition: transform 0.3s ease, opacity 0.5s ease; }
-.gallery-item.is-deleting, .waiting-card.is-deleting {
-    transform: scale(0.9);
-    opacity: 0;
-}
-.delete-button {
+.gallery-item.is-deleting, .waiting-card.is-deleting { transform: scale(0.9); opacity: 0; }
+
+.action-buttons {
     position: absolute;
     top: 8px;
     right: 8px;
     z-index: 2;
+    display: flex;
+    gap: 5px;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.3s, transform 0.3s;
+}
+.gallery-item:hover .action-buttons, .waiting-card:hover .action-buttons {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.delete-button, .torrent-button {
     width: 30px;
     height: 30px;
     border-radius: 50%;
@@ -307,17 +285,14 @@ button:disabled {
     text-align: center;
     padding: 0;
     cursor: pointer;
-    opacity: 0;
-    transform: scale(0.8);
-    transition: opacity 0.3s, transform 0.3s, background-color 0.3s;
+    transition: background-color 0.3s;
 }
-.gallery-item:hover .delete-button, .waiting-card:hover .delete-button {
-    opacity: 1;
-    transform: scale(1);
-}
-.delete-button:hover {
-    background-color: var(--danger-color);
-}
+
+.delete-button:hover { background-color: var(--danger-color); }
+.torrent-button:hover { background-color: var(--torrent-color); }
+.torrent-button.status-downloading { background-color: var(--torrent-color); }
+.torrent-button.status-seeding, .torrent-button.status-completed { background-color: var(--torrent-done-color); }
+
 .gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease, filter 0.4s ease; animation: reveal 0.5s ease-out forwards; }
 .gallery-item:hover img { transform: scale(1.05); filter: brightness(1.1); }
 .date-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); color: white; padding: 20px 10px 10px; font-size: 14px; font-weight: 700; text-align: left; transition: opacity 0.4s; pointer-events: none; }
@@ -349,6 +324,87 @@ button:disabled {
 @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 @keyframes zoomIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
 @keyframes reveal { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+/* НОВЫЕ СТИЛИ ДЛЯ ВИДЖЕТА И НАСТРОЕК */
+.settings-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+    color: #adb5bd;
+}
+
+.status-widget {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    background-color: var(--card-bg-color);
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    z-index: 1001;
+    overflow: hidden;
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+.status-widget.minimized {
+    transform: translateY(calc(100% - 40px));
+}
+
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 15px;
+    background-color: #2b2b2b;
+    cursor: pointer;
+}
+.widget-header h4 {
+    margin: 0;
+    font-size: 14px;
+}
+.widget-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    font-size: 20px;
+    padding: 0;
+    line-height: 1;
+}
+
+.widget-body {
+    padding: 15px;
+}
+#widget-movie-name {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0 0 10px 0;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 8px;
+    background-color: #343a40;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.progress-bar {
+    width: 0%;
+    height: 100%;
+    background-color: var(--primary-color);
+    border-radius: 4px;
+    transition: width 0.5s linear;
+}
+
+.widget-stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #adb5bd;
+    margin-top: 8px;
+}
 
 @media (max-width: 700px) {
     body { padding: 5px; }
