@@ -86,7 +86,7 @@ def get_movie_data_from_kinopoisk(query):
         return {
             "name": movie.get('name', 'Название не найдено'),
             "poster": movie.get('poster', {}).get('url'),
-            "year": movie.get('year', ''),
+            "year": str(movie.get('year', '')),
             "description": movie.get('description', 'Описание отсутствует.'),
             "rating_kp": movie.get('rating', {}).get('kp', 0.0),
             "genres": ", ".join(genres),
@@ -119,7 +119,6 @@ def get_background_photos():
         return []
 
 # --- Маршруты ---
-
 @app.route('/')
 def index():
     background_photos = get_background_photos()
@@ -169,7 +168,6 @@ def create_lottery():
     db.session.commit()
     wait_url = url_for('wait_for_result', lottery_id=lottery_id)
     return jsonify({"wait_url": wait_url})
-
 
 @app.route('/wait/<lottery_id>')
 def wait_for_result(lottery_id):
@@ -232,14 +230,14 @@ def start_download(lottery_id):
 
     qbt_client = None
     try:
-        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD, REQUESTS_TIMEOUT=15)
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
         search_query = f"{lottery.result_name} {lottery.result_year}"
         category = f"lottery-{lottery.id}"
         if qbt_client.torrents_info(category=category):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
         job = qbt_client.search_start(pattern=search_query, plugins='all', category='all')
-        time.sleep(15) # Даем плагинам время на поиск
+        time.sleep(15)
         results = qbt_client.search_results(jobID=job['id'])
         qbt_client.search_delete(jobID=job['id'])
         if not results.get('results'):
@@ -260,7 +258,7 @@ def start_download(lottery_id):
 def get_torrent_status(lottery_id):
     qbt_client = None
     try:
-        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD, REQUESTS_TIMEOUT=10)
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
         category = f"lottery-{lottery.id}"
         torrents = qbt_client.torrents_info(category=category)
