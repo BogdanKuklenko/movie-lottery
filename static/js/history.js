@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const telegramShareBtn = document.getElementById('telegram-share-btn');
     const dateOverlays = document.querySelectorAll('.date-overlay');
 
+    // --- ЭЛЕМЕНТЫ ДЛЯ ВИДЖЕТА ---
     const widget = document.getElementById('torrent-status-widget');
     const widgetHeader = widget.querySelector('.widget-header');
     const widgetMovieName = widget.querySelector('#widget-movie-name');
