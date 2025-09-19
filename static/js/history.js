@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- ОБНОВЛЕННАЯ ЛОГИКА МОДАЛЬНОГО ОКНА ---
+    // --- ИСПРАВЛЕННАЯ ЛОГИКА МОДАЛЬНОГО ОКНА ---
     const openModal = async (lotteryId) => {
         modalOverlay.style.display = 'flex';
         modalWinnerInfo.innerHTML = '<div class="loader"></div>';
@@ -97,16 +97,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.error) throw new Error(data.error);
 
-            // Отрисовываем победителя, если он есть
             if (data.result) {
                 const winner = data.result;
-                const ratingClass = winner.rating_kp >= 7 ? 'rating-high' : winner.rating_kp >= 5 ? 'rating-medium' : 'rating-low';
                 
+                const hasRating = winner.rating_kp && winner.rating_kp > 0;
+                const ratingClass = hasRating ? (winner.rating_kp >= 7 ? 'rating-high' : winner.rating_kp >= 5 ? 'rating-medium' : 'rating-low') : '';
+                const ratingBadgeHtml = hasRating ? `<div class="rating-badge ${ratingClass}">${winner.rating_kp.toFixed(1)}</div>` : '';
+
                 modalWinnerInfo.innerHTML = `
                     <div class="winner-card">
                         <div class="winner-poster">
                             <img src="${winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="Постер ${winner.name}">
-                            ${winner.rating_kp ? `<div class="rating-badge ${ratingClass}">${winner.rating_kp.toFixed(1)}</div>` : ''}
+                            ${ratingBadgeHtml}
                         </div>
                         <div class="winner-details">
                             <h2>${winner.name}</h2>
@@ -116,7 +118,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
 
-                // Отрисовываем проигравших
                 const losers = data.movies.filter(movie => movie.name !== winner.name);
                 modalLoserList.innerHTML = '';
                 if (losers.length > 0) {
@@ -128,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     modalLoserListContainer.style.display = 'block';
                 }
-            } else { // Если розыгрыш еще не состоялся
+            } else {
                  modalResultView.style.display = 'none';
                  modalWaitView.style.display = 'block';
                  const playUrl = data.play_url;
@@ -164,9 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const torrentButton = e.target.closest('.torrent-button');
             const deleteButton = e.target.closest('.delete-button');
             const galleryItem = e.target.closest('.gallery-item');
-
             if (!galleryItem) return;
-
             const lotteryId = galleryItem.dataset.lotteryId;
             const movieName = galleryItem.dataset.movieName;
 
@@ -194,7 +193,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- ЗАКРЫТИЕ МОДАЛЬНОГО ОКНА ---
     const closeModal = () => { modalOverlay.style.display = 'none'; };
-    closeButton.addEventListener('click', closeModal);
+    if (closeButton) {
+        closeButton.addEventListener('click', closeModal);
+    }
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalOverlay.style.display !== 'none') closeModal(); });
 
