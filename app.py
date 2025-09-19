@@ -13,6 +13,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client, LoginFailed
+# --- НОВОЕ: Импорт для работы с Rutracker ---
+from rutracker_api import RutrackerApi
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -31,7 +33,12 @@ QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
-# --- Модели Данных ---
+# --- НОВОЕ: Конфигурация для Rutracker ---
+RUTRACKER_LOGIN = os.environ.get('RUTRACKER_LOGIN')
+RUTRACKER_PASSWORD = os.environ.get('RUTRACKER_PASSWORD')
+
+
+# --- Модели Данных (без изменений) ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -60,7 +67,7 @@ class BackgroundPhoto(db.Model):
     z_index = db.Column(db.Integer, nullable=False)
     added_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
-# --- Вспомогательные функции ---
+# --- Вспомогательные функции (без изменений) ---
 def get_movie_data_from_kinopoisk(query):
     headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
@@ -82,13 +89,9 @@ def get_movie_data_from_kinopoisk(query):
         genres = [genre['name'] for genre in movie.get('genres', [])[:3]]
         countries = [country['name'] for country in movie.get('countries', [])[:3]]
         return {
-            "name": movie.get('name', 'Название не найдено'),
-            "poster": movie.get('poster', {}).get('url'),
-            "year": str(movie.get('year', '')),
-            "description": movie.get('description', 'Описание отсутствует.'),
-            "rating_kp": movie.get('rating', {}).get('kp', 0.0),
-            "genres": ", ".join(genres),
-            "countries": ", ".join(countries)
+            "name": movie.get('name', 'Название не найдено'), "poster": movie.get('poster', {}).get('url'),
+            "year": str(movie.get('year', '')), "description": movie.get('description', 'Описание отсутствует.'),
+            "rating_kp": movie.get('rating', {}).get('kp', 0.0), "genres": ", ".join(genres), "countries": ", ".join(countries)
         }
     except requests.exceptions.RequestException as e:
         print(f"Ошибка при запросе к API Кинопоиска: {e}")
@@ -107,7 +110,7 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
-# --- Маршруты ---
+# --- Маршруты (без изменений) ---
 @app.route('/')
 def index():
     background_photos = get_background_photos()
@@ -199,60 +202,55 @@ def delete_lottery(lottery_id):
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
-# --- НОВЫЕ АСИНХРОННЫЕ МАРШРУТЫ ДЛЯ ТОРРЕНТОВ ---
-@app.route('/api/torrent-search/start/<lottery_id>', methods=['POST'])
-def torrent_search_start(lottery_id):
+# --- ОБНОВЛЕННЫЕ МАРШРУТЫ ДЛЯ ТОРРЕНТОВ (ЧЕРЕЗ RUTRACKER) ---
+
+@app.route('/api/start-download/<lottery_id>', methods=['POST'])
+def start_download(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     if not lottery.result_name:
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
-    try:
-        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
-        qbt_client.auth_log_in()
-        search_query = f"{lottery.result_name} {lottery.result_year}"
-        job = qbt_client.search_start(pattern=search_query, plugins='all', category='all')
-        return jsonify({"success": True, "message": "Поиск запущен!", "job_id": job['id']})
-    except Exception as e:
-        return jsonify({"success": False, "message": f"Ошибка подключения к qBittorrent: {e}"}), 500
 
-@app.route('/api/torrent-search/status/<job_id>')
-def torrent_search_status(job_id):
+    qbt_client = None
     try:
+        # 1. Проверяем, не скачивается ли уже этот торрент
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        status = qbt_client.search_status(jobID=job_id)
-        if not status:
-             return jsonify({"status": "failed", "message": "Задача поиска не найдена."})
+        category = f"lottery-{lottery.id}"
+        if qbt_client.torrents_info(category=category):
+            return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
         
-        current_status = status[0]['status']
-        if current_status == 'Stopped':
-            results = qbt_client.search_results(jobID=job_id)
-            qbt_client.search_delete(jobID=job_id)
-            if not results.get('results'):
-                return jsonify({"status": "completed", "found": False})
-            
-            best_torrent = max(results['results'], key=lambda t: t['num_seeds'])
-            return jsonify({"status": "completed", "found": True, "best_torrent": best_torrent})
-        else:
-            return jsonify({"status": "running"})
-    except Exception as e:
-        return jsonify({"status": "failed", "message": str(e)})
+        # 2. Ищем на Rutracker
+        rt = RutrackerApi(RUTRACKER_LOGIN, RUTRACKER_PASSWORD)
+        search_query = f"{lottery.result_name} {lottery.result_year}"
+        results = rt.search(search_query)
 
-@app.route('/api/torrent-search/download', methods=['POST'])
-def torrent_search_download():
-    data = request.json
-    torrent_url = data.get('url')
-    lottery_id = data.get('lottery_id')
-    try:
-        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
-        qbt_client.auth_log_in()
-        category = f"lottery-{lottery_id}"
-        qbt_client.torrents_add(urls=torrent_url, category=category, sequential='true')
-        return jsonify({"success": True, "message": "Загрузка началась!"})
+        if not results:
+            return jsonify({"success": False, "message": "Фильм не найден на Rutracker"}), 404
+        
+        # 3. Выбираем лучший торрент (по сидам) и получаем magnet-ссылку
+        best_torrent = max(results, key=lambda t: t.seeds)
+        magnet_link = rt.get_magnet(best_torrent.id)
+
+        # 4. Отправляем magnet-ссылку в qBittorrent
+        qbt_client.torrents_add(
+            urls=magnet_link,
+            category=category,
+            is_sequential='true' # Включаем последовательную загрузку
+        )
+        return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
+
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
+        error_message = f"Ошибка при запуске скачивания: {e}"
+        print(error_message)
+        return jsonify({"success": False, "message": error_message}), 500
+    finally:
+        if qbt_client:
+            try: qbt_client.auth_log_out()
+            except: pass
 
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
+    qbt_client = None
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
@@ -269,12 +267,16 @@ def get_torrent_status(lottery_id):
         return jsonify(status_info)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
+    finally:
+        if qbt_client:
+            try: qbt_client.auth_log_out()
+            except: pass
 
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
-        db.drop_all() 
-        db.create_all() 
+        db.drop_all()
+        db.create_all()
     return "База данных полностью очищена и создана заново!"
 
 if __name__ == '__main__':
