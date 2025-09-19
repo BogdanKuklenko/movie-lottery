@@ -206,6 +206,9 @@ def delete_lottery(lottery_id):
 
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
+    # --- ОТЛАДОЧНАЯ СТРОКА ДЛЯ ПРОВЕРКИ ---
+    print("--- ВЕРСИЯ ФАЙЛА ОТ 19.09 --- Запущена функция start_download ---")
+    
     lottery = Lottery.query.get_or_404(lottery_id)
     if not lottery.result_name:
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
