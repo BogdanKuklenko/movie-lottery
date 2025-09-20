@@ -213,31 +213,20 @@ def start_download(lottery_id):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
 
         # 1. Формируем поисковый запрос к API
-        search_query = f"{lottery.result_name} {lottery.result_year}"
-        api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
-        
-        print(f"Отправляю запрос в API: {search_query}")
-        response = requests.get(api_url, timeout=15)
-        response.raise_for_status()
-        results = response.json()
+        search_query = f"{lottery.result_name} {lottery.result_year}".strip()
+        results = _search_torrents(search_query)
 
         if not results:
-            return jsonify({"success": False, "message": "Фильм не найден через API."}), 404
+            return jsonify({"success": False, "message": "Фильм не найден через доступные API."}), 404
 
         # 2. Ищем лучший торрент по сидам
-        best_torrent = None
-        max_seeders = -1
-        for torrent in results:
-            # API может возвращать сиды как строку или число, приводим к int
-            seeders = int(torrent.get('seeders', 0))
-            if seeders > max_seeders:
-                max_seeders = seeders
-                best_torrent = torrent
-        
-        if not best_torrent or not best_torrent.get('magnet'):
-             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
-
+        best_torrent = max(results, key=lambda torrent: torrent.get('seeders', 0))
         magnet_link = best_torrent.get('magnet')
+
+        if not magnet_link:
+            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
+
+        max_seeders = best_torrent.get('seeders', 0)
 
         # 3. Отправляем найденную magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
@@ -264,11 +253,11 @@ def _format_eta(eta_seconds):
         return f"{hours}ч {minutes}м"
     return f"{minutes}м"
 
-
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
     try:
+        lottery_id = str(lottery_id)
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
         category = f"lottery-{lottery_id}"
