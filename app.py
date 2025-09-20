@@ -201,6 +201,7 @@ def delete_lottery(lottery_id):
 # --- НОВАЯ УПРОЩЕННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ ПУБЛИЧНЫЙ API ---
 
 
+
 def _format_eta(eta_seconds):
     if eta_seconds is None or eta_seconds < 0:
         return None
@@ -209,6 +210,7 @@ def _format_eta(eta_seconds):
     if hours:
         return f"{hours}ч {minutes}м"
     return f"{minutes}м"
+
 
 
 
@@ -291,6 +293,7 @@ def start_download(lottery_id):
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
 
     qbt_client = None
+    magnet_link = None
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
@@ -302,8 +305,16 @@ def start_download(lottery_id):
         search_query = f"{lottery.result_name} {lottery.result_year}".strip()
         results = _search_torrents(search_query)
 
-
         magnet_link = best_torrent.get('magnet')
+        if not magnet_link:
+            magnet_link = _ensure_magnet_link(
+                best_torrent.get('magnet'),
+                name=best_torrent.get('name'),
+                info_hash=best_torrent.get('info_hash'),
+            )
+
+        if not magnet_link:
+            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
 
         if not magnet_link:
             return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404

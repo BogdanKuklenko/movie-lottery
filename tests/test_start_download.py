@@ -94,3 +94,4 @@ def test_start_download_calls_search_helper(monkeypatch, app_module):
     ]
     assert _FakeDownloadClient.last_category == "lottery-movie1"
 
+
