@@ -12,7 +12,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client
-from dht_torznab import search # <-- НОВАЯ БИБЛИОТЕКА ДЛЯ ПОИСКА В DHT
+from magnet_dht import MagnetDHT # <-- НОВАЯ, РЕАЛЬНАЯ БИБЛИОТЕКА
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -216,16 +216,20 @@ def start_download(lottery_id):
         # 1. Ищем торренты напрямую в сети DHT
         search_query = f"{lottery.result_name} {lottery.result_year}"
         print(f"Отправляю запрос в DHT: {search_query}")
-        # Библиотека сама ищет и возвращает отсортированный по сидам результат
-        results = search(search_query, limit=5)
+        
+        with MagnetDHT() as dht:
+            # Ищем в течение 15 секунд, берем до 20 результатов
+            results = list(dht.search(search_query, timeout=15, limit=20))
 
         if not results:
             return jsonify({"success": False, "message": "Фильм не найден в сети DHT."}), 404
 
-        # 2. Берем лучший торрент (он будет первым в списке)
-        best_torrent = results[0]
-        magnet_link = best_torrent['magnet']
-        seeders = best_torrent['seeders']
+        # 2. Ищем лучший торрент по сидам (если информация о них есть)
+        # Если сидов нет, просто берем первый результат
+        best_torrent = max(results, key=lambda t: t.seeders) if any(t.seeders for t in results) else results[0]
+        
+        magnet_link = best_torrent.magnet
+        seeders = best_torrent.seeders
         
         # 3. Отправляем magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {seeders} сидами. Отправляю в qBittorrent.")

@@ -4,4 +4,4 @@ psycopg2-binary
 gunicorn
 requests
 qbittorrent-api
-dht-torznab
+magnet-dht
