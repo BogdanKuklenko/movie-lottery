@@ -7,13 +7,13 @@ import re
 import string
 import time
 import requests
+import traceback # <-- ДОБАВЛЕНО ДЛЯ ДЕТАЛЬНОЙ ДИАГНОСТИКИ
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client, LoginFailed
-# --- НОВОЕ: Импорт для работы с Rutracker ---
 from rutracker_api import RutrackerApi
 
 # --- Конфигурация ---
@@ -33,7 +33,7 @@ QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
-# --- НОВОЕ: Конфигурация для Rutracker ---
+# --- Конфигурация для Rutracker ---
 RUTRACKER_LOGIN = os.environ.get('RUTRACKER_LOGIN')
 RUTRACKER_PASSWORD = os.environ.get('RUTRACKER_PASSWORD')
 
@@ -206,9 +206,7 @@ def delete_lottery(lottery_id):
 
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
-    # --- ОТЛАДОЧНАЯ СТРОКА ДЛЯ ПРОВЕРКИ ---
-    print("--- ВЕРСИЯ ФАЙЛА ОТ 19.09 --- Запущена функция start_download ---")
-    
+    # Убираем отладочную строку, чтобы не мешала
     lottery = Lottery.query.get_or_404(lottery_id)
     if not lottery.result_name:
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
@@ -223,10 +221,8 @@ def start_download(lottery_id):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
         
         # 2. Ищем на Rutracker
-        # --- ИЗМЕНЕНИЕ: Правильная инициализация и логин ---
         rt = RutrackerApi()
         rt.login(RUTRACKER_LOGIN, RUTRACKER_PASSWORD)
-        # ---------------------------------------------------
         search_query = f"{lottery.result_name} {lottery.result_year}"
         results = rt.search(search_query)
 
@@ -246,9 +242,13 @@ def start_download(lottery_id):
         return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
 
     except Exception as e:
-        error_message = f"Ошибка при запуске скачивания: {e}"
+        # --- ИЗМЕНЕНИЕ: УЛУЧШЕННЫЙ ВЫВОД ОШИБКИ ---
+        tb_str = traceback.format_exc()
+        error_message = f"ПОЛНЫЙ ОТЧЕТ ОБ ОШИБКЕ:\n{tb_str}"
         print(error_message)
-        return jsonify({"success": False, "message": error_message}), 500
+        # Отправляем пользователю более общее сообщение, чтобы не раскрывать детали
+        user_message = f"Произошла внутренняя ошибка сервера: {e}"
+        return jsonify({"success": False, "message": user_message}), 500
     finally:
         if qbt_client:
             try: qbt_client.auth_log_out()
