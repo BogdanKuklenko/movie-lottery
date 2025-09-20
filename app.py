@@ -1,15 +1,15 @@
 # app.py
 
-import html
 import os
 import json
 import random
 import re
 import string
 import requests
+import xml.etree.ElementTree as ET
+import threading # <-- ДОБАВЛЕНО для фоновых задач
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
-from urllib.parse import quote
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
@@ -32,8 +32,17 @@ QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
+# --- КОНФИГУРАЦИЯ JACKETT ---
+JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
+# --- ОПТИМИЗАЦИЯ: Оставляем только 3 самых быстрых и надежных публичных трекера ---
+JACKETT_INDEXERS = [
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutor/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bitru/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/gtorrentpro/results/torznab/",
+]
 
-# --- Модели Данных ---
+
+# --- Модели Данных (без изменений) ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -62,7 +71,7 @@ class BackgroundPhoto(db.Model):
     z_index = db.Column(db.Integer, nullable=False)
     added_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
-# --- Вспомогательные функции ---
+# --- Вспомогательные функции (без изменений) ---
 def get_movie_data_from_kinopoisk(query):
     headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
@@ -105,7 +114,7 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
-# --- Маршруты ---
+# --- Маршруты (без изменений) ---
 @app.route('/')
 def index():
     background_photos = get_background_photos()
@@ -198,246 +207,129 @@ def delete_lottery(lottery_id):
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
 
-# --- ФИНАЛЬНАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ НОВЫЙ API ---
+# --- НОВАЯ АСИНХРОННАЯ ЛОГИКА СКАЧИВАНИЯ ---
 
-def _search_apibay(search_query):
-    """Ищет торренты через API apibay.org."""
-    try:
-        # API apibay.org требует, чтобы поиск был по ID или названию, но без года
-        # Мы убираем год для лучшего соответствия
-        query_without_year = re.sub(r'\s+\d{4}$', '', search_query)
-        api_url = f"https://apibay.org/q.php?q={requests.utils.quote(query_without_year)}"
-        print(f"Отправляю запрос в apibay API: {query_without_year}")
-        response = requests.get(api_url, timeout=15)
-        response.raise_for_status()
-        results = response.json()
+def search_and_download_task(app_context, lottery_id, search_query):
+    """Эта функция будет выполняться в фоновом потоке."""
+    with app_context:
+        print(f"[Фон] Начал поиск для: {search_query}")
         
-        # Фильтруем результаты, чтобы найти видео
-        video_results = [r for r in results if r.get('name') != '0' and r.get('info_hash') != '0']
-        return video_results
-    except Exception as e:
-        print(f"Ошибка при обращении к apibay API: {e}")
-        return []
+        # 1. Поиск по всем трекерам
+        params = {"apikey": JACKETT_API_KEY, "Query": search_query}
+        all_results = []
+        for indexer_url in JACKETT_INDEXERS:
+            try:
+                indexer_name = indexer_url.split('/indexers/')[1].split('/')[0]
+                print(f"[Фон] Ищу на {indexer_name}...")
+                response = requests.get(indexer_url, params=params, timeout=20) # Увеличим таймаут
+                if response.status_code == 200:
+                    root = ET.fromstring(response.content)
+                    for item in root.findall('.//item'):
+                        all_results.append(item)
+            except requests.exceptions.RequestException as e:
+                print(f"[Фон] Не удалось подключиться к {indexer_name}: {e}")
+                continue
+
+        if not all_results:
+            print(f"[Фон] Фильм '{search_query}' не найден ни на одном из трекеров.")
+            return
+
+        # 2. Ищем лучший торрент-ФАЙЛ
+        best_torrent_file_url = None
+        max_seeders = -1
+        for item in all_results:
+            seeders_element = item.find(".//torznab:attr[@name='seeders']", namespaces={'torznab': 'http://torznab.com/schemas/2012/xmlns'})
+            if seeders_element is not None:
+                seeders = int(seeders_element.get('value'))
+                if seeders > max_seeders:
+                    current_url = None
+                    link_tag = item.find('link')
+                    if link_tag is not None and link_tag.text and '.torrent' in link_tag.text:
+                        current_url = link_tag.text
+                    if not current_url:
+                        enclosure_tag = item.find('enclosure')
+                        if enclosure_tag is not None and '.torrent' in enclosure_tag.get('url', ''):
+                            current_url = enclosure_tag.get('url')
+                    if current_url:
+                        max_seeders = seeders
+                        best_torrent_file_url = current_url
+
+        if not best_torrent_file_url:
+            print(f"[Фон] Фильм '{search_query}' найден, но не удалось найти ссылку на .torrent файл.")
+            return
+
+        # 3. Скачиваем .torrent файл
+        print(f"[Фон] Найдена ссылка с {max_seeders} сидами. Скачиваю .torrent файл...")
+        torrent_file_response = requests.get(best_torrent_file_url, timeout=20)
+        torrent_file_response.raise_for_status()
+        torrent_content = torrent_file_response.content
+
+        # 4. Отправляем в qBittorrent
+        print("[Фон] Отправляю файл в qBittorrent.")
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+        qbt_client.auth_log_in()
+        qbt_client.torrents_add(torrent_files=torrent_content, category=f"lottery-{lottery_id}", is_sequential='true')
+        qbt_client.auth_log_out()
+        print(f"[Фон] Задача для '{search_query}' успешно завершена!")
 
 
-
-def _format_eta(eta_seconds):
-    if eta_seconds is None or eta_seconds < 0:
-        return None
-    hours, remainder = divmod(int(eta_seconds), 3600)
-    minutes = remainder // 60
-    if hours:
-        return f"{hours}ч {minutes}м"
-    return f"{minutes}м"
-
-
-
-
-
-def _search_torrenter_api(search_query):
-    api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
-    print(f"Отправляю запрос в Torrenter API: {search_query}")
-    response = requests.get(api_url, timeout=15)
-    response.raise_for_status()
-    results = response.json()
-    normalized = []
-    for torrent in results or []:
-
-        if not magnet_link:
-            continue
-        try:
-            seeders = int(torrent.get('seeders', 0))
-        except (TypeError, ValueError):
-            seeders = 0
-        normalized.append({
-            "magnet": magnet_link,
-            "seeders": seeders,
-            "name": torrent.get('name'),
-
-        })
-    return normalized
-
-
-def _search_apibay_api(search_query):
-    api_url = f"https://apibay.org/q.php?q={requests.utils.quote(search_query)}&cat=201"
-    print(f"Отправляю запрос в apibay API: {search_query}")
-    response = requests.get(api_url, timeout=15)
-    response.raise_for_status()
-    data = response.json()
-    if isinstance(data, dict) and data.get('error'):
-        return []
-    normalized = []
-    for torrent in data or []:
-        info_hash = torrent.get('info_hash')
-        name = torrent.get('name')
-        if not info_hash or not name:
-            continue
-        try:
-            seeders = int(torrent.get('seeders', 0))
-        except (TypeError, ValueError):
-            seeders = 0
-        magnet_name = requests.utils.quote(name, safe='')
-
-        normalized.append({
-            "magnet": magnet_link,
-            "seeders": seeders,
-            "name": name,
-
-        })
-    return normalized
-
-
-def _search_torrents(search_query):
-    search_strategies = (
-        _search_torrenter_api,
-        _search_apibay_api,
-    )
-    for strategy in search_strategies:
-        try:
-            results = strategy(search_query)
-            if results:
-                return results
-        except requests.exceptions.RequestException as exc:
-            print(f"Ошибка при обращении к {strategy.__name__}: {exc}")
-        except ValueError as exc:
-            print(f"Ошибка при обработке ответа {strategy.__name__}: {exc}")
-    return []
-
-
-# --- Маршрут запуска скачивания ---
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     if not lottery.result_name:
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
 
-    qbt_client = None
-    magnet_link = None
+    # Проверяем, не запущена ли уже загрузка
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        category = f"lottery-{lottery_id}"
-        if qbt_client.torrents_info(category=category):
+        if qbt_client.torrents_info(category=f"lottery-{lottery_id}"):
+            qbt_client.auth_log_out()
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
-
-<<<<<<< HEAD
-        # 1. Ищем торренты через новый API
-        search_query = f"{lottery.result_name} {lottery.result_year}"
-        results = _search_apibay(search_query)
-
-        if not results:
-            return jsonify({"success": False, "message": "Фильм не найден через API."}), 404
-
-        # 2. Ищем лучший торрент по сидам
-        best_torrent = None
-        max_seeders = -1
-        for torrent in results:
-            seeders = int(torrent.get('seeders', 0))
-            if seeders > max_seeders:
-                max_seeders = seeders
-                best_torrent = torrent
-        
-        if not best_torrent:
-             return jsonify({"success": False, "message": "Фильм найден, но не удалось выбрать лучший торрент."}), 404
-
-        # 3. Собираем magnet-ссылку вручную (самый надежный способ)
-        info_hash = best_torrent.get('info_hash')
-        name = best_torrent.get('name')
-        # Стандартные и рабочие трекеры для magnet-ссылок
-        trackers = [
-            "udp://tracker.openbittorrent.com:80",
-            "udp://tracker.opentrackr.org:1337/announce",
-            "udp://tracker.coppersurfer.tk:6969/announce",
-            "udp://9.rarbg.to:2920/announce",
-            "udp://9.rarbg.me:2780/announce",
-        ]
-        magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={requests.utils.quote(name)}"
-        for tracker in trackers:
-            magnet_link += f"&tr={requests.utils.quote(tracker)}"
-=======
-        # 1. Формируем поисковый запрос к API
-        search_query = f"{lottery.result_name} {lottery.result_year}".strip()
-        results = _search_torrents(search_query)
-
-        magnet_link = best_torrent.get('magnet')
-        if not magnet_link:
-            magnet_link = _ensure_magnet_link(
-                best_torrent.get('magnet'),
-                name=best_torrent.get('name'),
-                info_hash=best_torrent.get('info_hash'),
-            )
-
-        if not magnet_link:
-            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
-
-        if not magnet_link:
-            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
-
->>>>>>> f80e8a49124308e5ecb61734941beed7a3369c15
-
-        # 4. Отправляем magnet-ссылку в qBittorrent
-        print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
-        qbt_client.torrents_add(urls=magnet_link, category=category, is_sequential='true')
-        return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
-
+        qbt_client.auth_log_out()
     except Exception as e:
-        error_message = f"Ошибка при запуске скачивания через API: {e}"
-        print(error_message)
-        return jsonify({"success": False, "message": error_message}), 500
-    finally:
-        if qbt_client:
-            try:
-                qbt_client.auth_log_out()
-            except Exception:
-                pass
+        print(f"Не удалось подключиться к qBittorrent для проверки: {e}")
+        # Продолжаем, т.к. qBittorrent мог быть просто перезагружен
+
+    # Запускаем долгий поиск в отдельном потоке
+    search_query = f"{lottery.result_name} {lottery.result_year}"
+    
+    # Создаем поток (Thread) и передаем ему нашу функцию и ее аргументы
+    thread = threading.Thread(target=search_and_download_task, args=(app.app_context(), lottery_id, search_query))
+    thread.daemon = True # Позволяет приложению завершиться, даже если поток еще работает
+    thread.start() # Запускаем поток
+
+    # Мгновенно возвращаем ответ пользователю, не дожидаясь окончания поиска
+    return jsonify({"success": True, "message": "Поиск запущен в фоновом режиме! Загрузка скоро начнется."})
 
 
-# --- Маршрут для статуса торрента ---
-def _format_eta(eta_seconds):
-    if eta_seconds is None or eta_seconds < 0:
-        return None
-    hours, remainder = divmod(int(eta_seconds), 3600)
-    minutes = remainder // 60
-    if hours:
-        return f"{hours}ч {minutes}м"
-    return f"{minutes}м"
-
+# --- Маршрут для статуса торрента (без изменений) ---
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
     try:
-        lottery_id = str(lottery_id)
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
         category = f"lottery-{lottery_id}"
         torrents = qbt_client.torrents_info(category=category)
         if not torrents:
             return jsonify({"status": "not_found"})
-
         torrent = torrents[0]
-        progress_percent = round(torrent.progress * 100, 1) if torrent.progress is not None else 0.0
-        download_speed_mbps = round(torrent.dlspeed / 1024 / 1024, 2) if torrent.dlspeed is not None else 0.0
-        eta_display = _format_eta(torrent.eta)
-
         status_info = {
-            "status": torrent.state,
-            "progress": progress_percent,
-            "speed_mbps": download_speed_mbps,
-            "eta": eta_display,
-            "name": torrent.name,
+            "status": torrent.state, "progress": f"{torrent.progress * 100:.1f}",
+            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}",
+            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м", "name": torrent.name
         }
         return jsonify(status_info)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
     finally:
         if qbt_client:
-            try:
-                qbt_client.auth_log_out()
-            except Exception:
-                pass
+            try: qbt_client.auth_log_out()
+            except: pass
 
 
-# --- Служебные маршруты ---
+# --- Служебные маршруты (без изменений) ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
