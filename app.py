@@ -33,7 +33,6 @@ QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
 # --- КОНФИГУРАЦИЯ JACKETT ---
 JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
-# Список всех ваших трекеров
 JACKETT_INDEXERS = [
     "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bitru/results/torznab/",
     "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/gtorrentpro/results/torznab/",
@@ -228,16 +227,14 @@ def start_download(lottery_id):
         if qbt_client.torrents_info(category=category):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
 
-        # --- НОВЫЙ ПОДХОД: Поиск по всем трекерам ---
+        # 1. Поиск по всем трекерам
         search_query = f"{lottery.result_name} {lottery.result_year}"
         params = {"apikey": JACKETT_API_KEY, "Query": search_query}
-        
         all_results = []
-        # 1. Перебираем все трекеры и собираем результаты
         for indexer_url in JACKETT_INDEXERS:
             try:
                 print(f"Ищу на {indexer_url.split('/indexers/')[1].split('/')[0]}...")
-                response = requests.get(indexer_url, params=params, timeout=10) # 10 секунд на ответ
+                response = requests.get(indexer_url, params=params, timeout=10)
                 if response.status_code == 200:
                     root = ET.fromstring(response.content)
                     for item in root.findall('.//item'):
@@ -249,8 +246,8 @@ def start_download(lottery_id):
         if not all_results:
             return jsonify({"success": False, "message": "Фильм не найден ни на одном из трекеров."}), 404
 
-        # 2. Ищем лучший торрент среди ВСЕХ результатов
-        best_torrent_link = None
+        # 2. Ищем лучший торрент-ФАЙЛ среди ВСЕХ результатов
+        best_torrent_file_url = None
         max_seeders = -1
 
         for item in all_results:
@@ -258,32 +255,24 @@ def start_download(lottery_id):
             if seeders_element is not None:
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
-                    current_link = None
-                    # Ищем magnet-ссылку в трех возможных местах
+                    # Ищем ссылку на .torrent файл, она обычно в теге <link>
                     link_tag = item.find('link')
-                    if link_tag is not None and link_tag.text and link_tag.text.startswith('magnet:'):
-                        current_link = link_tag.text
-                    
-                    if not current_link:
-                        enclosure_tag = item.find('enclosure')
-                        if enclosure_tag is not None and enclosure_tag.get('url', '').startswith('magnet:'):
-                            current_link = enclosure_tag.get('url')
-                    
-                    if not current_link:
-                        guid_tag = item.find('guid')
-                        if guid_tag is not None and guid_tag.text and guid_tag.text.startswith('magnet:'):
-                            current_link = guid_tag.text
-                    
-                    if current_link:
+                    if link_tag is not None and link_tag.text and '.torrent' in link_tag.text:
                         max_seeders = seeders
-                        best_torrent_link = current_link
+                        best_torrent_file_url = link_tag.text
 
-        if not best_torrent_link:
-            return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
+        if not best_torrent_file_url:
+            return jsonify({"success": False, "message": "Фильм найден, но не удалось найти ссылку на .torrent файл."}), 404
 
-        # 3. Отправляем найденную magnet-ссылку в qBittorrent
-        print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
-        qbt_client.torrents_add(urls=best_torrent_link, category=category, is_sequential='true')
+        # 3. Скачиваем .torrent файл
+        print(f"Найдена лучшая ссылка с {max_seeders} сидами. Скачиваю .torrent файл...")
+        torrent_file_response = requests.get(best_torrent_file_url, timeout=15)
+        torrent_file_response.raise_for_status()
+        torrent_content = torrent_file_response.content
+
+        # 4. Отправляем СОДЕРЖИМОЕ файла в qBittorrent
+        print("Отправляю файл в qBittorrent.")
+        qbt_client.torrents_add(torrent_files=torrent_content, category=category, is_sequential='true')
         return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
 
     except Exception as e:
