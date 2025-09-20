@@ -1,5 +1,6 @@
 # app.py
 
+import html
 import os
 import json
 import random
@@ -8,6 +9,7 @@ import string
 import requests
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
+from urllib.parse import quote
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
@@ -217,6 +219,92 @@ def _search_apibay(search_query):
         print(f"Ошибка при обращении к apibay API: {e}")
         return []
 
+
+
+def _format_eta(eta_seconds):
+    if eta_seconds is None or eta_seconds < 0:
+        return None
+    hours, remainder = divmod(int(eta_seconds), 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
+
+
+
+
+def _search_torrenter_api(search_query):
+    api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
+    print(f"Отправляю запрос в Torrenter API: {search_query}")
+    response = requests.get(api_url, timeout=15)
+    response.raise_for_status()
+    results = response.json()
+    normalized = []
+    for torrent in results or []:
+
+        if not magnet_link:
+            continue
+        try:
+            seeders = int(torrent.get('seeders', 0))
+        except (TypeError, ValueError):
+            seeders = 0
+        normalized.append({
+            "magnet": magnet_link,
+            "seeders": seeders,
+            "name": torrent.get('name'),
+
+        })
+    return normalized
+
+
+def _search_apibay_api(search_query):
+    api_url = f"https://apibay.org/q.php?q={requests.utils.quote(search_query)}&cat=201"
+    print(f"Отправляю запрос в apibay API: {search_query}")
+    response = requests.get(api_url, timeout=15)
+    response.raise_for_status()
+    data = response.json()
+    if isinstance(data, dict) and data.get('error'):
+        return []
+    normalized = []
+    for torrent in data or []:
+        info_hash = torrent.get('info_hash')
+        name = torrent.get('name')
+        if not info_hash or not name:
+            continue
+        try:
+            seeders = int(torrent.get('seeders', 0))
+        except (TypeError, ValueError):
+            seeders = 0
+        magnet_name = requests.utils.quote(name, safe='')
+
+        normalized.append({
+            "magnet": magnet_link,
+            "seeders": seeders,
+            "name": name,
+
+        })
+    return normalized
+
+
+def _search_torrents(search_query):
+    search_strategies = (
+        _search_torrenter_api,
+        _search_apibay_api,
+    )
+    for strategy in search_strategies:
+        try:
+            results = strategy(search_query)
+            if results:
+                return results
+        except requests.exceptions.RequestException as exc:
+            print(f"Ошибка при обращении к {strategy.__name__}: {exc}")
+        except ValueError as exc:
+            print(f"Ошибка при обработке ответа {strategy.__name__}: {exc}")
+    return []
+
+
+# --- Маршрут запуска скачивания ---
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
@@ -224,13 +312,15 @@ def start_download(lottery_id):
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
 
     qbt_client = None
+    magnet_link = None
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        category = f"lottery-{lottery.id}"
+        category = f"lottery-{lottery_id}"
         if qbt_client.torrents_info(category=category):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
 
+<<<<<<< HEAD
         # 1. Ищем торренты через новый API
         search_query = f"{lottery.result_name} {lottery.result_year}"
         results = _search_apibay(search_query)
@@ -264,6 +354,26 @@ def start_download(lottery_id):
         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={requests.utils.quote(name)}"
         for tracker in trackers:
             magnet_link += f"&tr={requests.utils.quote(tracker)}"
+=======
+        # 1. Формируем поисковый запрос к API
+        search_query = f"{lottery.result_name} {lottery.result_year}".strip()
+        results = _search_torrents(search_query)
+
+        magnet_link = best_torrent.get('magnet')
+        if not magnet_link:
+            magnet_link = _ensure_magnet_link(
+                best_torrent.get('magnet'),
+                name=best_torrent.get('name'),
+                info_hash=best_torrent.get('info_hash'),
+            )
+
+        if not magnet_link:
+            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
+
+        if not magnet_link:
+            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
+
+>>>>>>> f80e8a49124308e5ecb61734941beed7a3369c15
 
         # 4. Отправляем magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
@@ -276,34 +386,55 @@ def start_download(lottery_id):
         return jsonify({"success": False, "message": error_message}), 500
     finally:
         if qbt_client:
-            try: qbt_client.auth_log_out()
-            except: pass
+            try:
+                qbt_client.auth_log_out()
+            except Exception:
+                pass
 
 
 # --- Маршрут для статуса торрента ---
+def _format_eta(eta_seconds):
+    if eta_seconds is None or eta_seconds < 0:
+        return None
+    hours, remainder = divmod(int(eta_seconds), 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
     try:
+        lottery_id = str(lottery_id)
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        category = f"lottery-{lottery.id}"
+        category = f"lottery-{lottery_id}"
         torrents = qbt_client.torrents_info(category=category)
         if not torrents:
             return jsonify({"status": "not_found"})
+
         torrent = torrents[0]
+        progress_percent = round(torrent.progress * 100, 1) if torrent.progress is not None else 0.0
+        download_speed_mbps = round(torrent.dlspeed / 1024 / 1024, 2) if torrent.dlspeed is not None else 0.0
+        eta_display = _format_eta(torrent.eta)
+
         status_info = {
-            "status": torrent.state, "progress": f"{torrent.progress * 100:.1f}",
-            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}",
-            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м", "name": torrent.name
+            "status": torrent.state,
+            "progress": progress_percent,
+            "speed_mbps": download_speed_mbps,
+            "eta": eta_display,
+            "name": torrent.name,
         }
         return jsonify(status_info)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
     finally:
         if qbt_client:
-            try: qbt_client.auth_log_out()
-            except: pass
+            try:
+                qbt_client.auth_log_out()
+            except Exception:
+                pass
 
 
 # --- Служебные маршруты ---
