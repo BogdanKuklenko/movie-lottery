@@ -228,7 +228,6 @@ def start_download(lottery_id):
         # 2. Ищем лучший торрент в ответе от Jackett
         root = ET.fromstring(response.content)
         best_torrent_link = None
-        best_torrent_item = None # <-- Сохраняем сюда лучший торрент
         max_seeders = -1
 
         for item in root.findall('.//item'):
@@ -237,32 +236,31 @@ def start_download(lottery_id):
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
                     max_seeders = seeders
-                    best_torrent_item = item # <-- Запоминаем весь <item>
                     
-                    # Пытаемся извлечь ссылку
+                    # --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Ищем ссылку в ТРЕХ местах ---
+                    current_link = None
+                    # 1. Ищем в <link>
                     link_tag = item.find('link')
                     if link_tag is not None and link_tag.text and link_tag.text.startswith('magnet:'):
-                        best_torrent_link = link_tag.text
-                    else:
+                        current_link = link_tag.text
+                    
+                    # 2. Если не нашли, ищем в <enclosure>
+                    if not current_link:
                         enclosure_tag = item.find('enclosure')
                         if enclosure_tag is not None and enclosure_tag.get('url', '').startswith('magnet:'):
-                            best_torrent_link = enclosure_tag.get('url')
+                            current_link = enclosure_tag.get('url')
+                    
+                    # 3. Если снова не нашли, ищем в <guid>
+                    if not current_link:
+                        guid_tag = item.find('guid')
+                        if guid_tag is not None and guid_tag.text and guid_tag.text.startswith('magnet:'):
+                            current_link = guid_tag.text
+                    
+                    if current_link:
+                        best_torrent_link = current_link
+                    # ---------------------------------------------------------
 
         if not best_torrent_link:
-            # --- ДИАГНОСТИЧЕСКИЙ БЛОК ---
-            # Если ссылка так и не нашлась, печатаем в лог всю информацию
-            # о лучшем торренте, который мы нашли, чтобы посмотреть его структуру.
-            print("\n--- JACKETT DEBUG START ---")
-            print(f"Не удалось найти magnet-ссылку для торрента с {max_seeders} сидами.")
-            if best_torrent_item is not None:
-                # Преобразуем XML-элемент в строку и печатаем
-                xml_string = ET.tostring(best_torrent_item, encoding='unicode')
-                print("Вот его содержимое:")
-                print(xml_string)
-            else:
-                print("Не удалось найти ни одного подходящего торрента в ответе.")
-            print("--- JACKETT DEBUG END ---\n")
-            # -----------------------------
             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
 
         # 3. Отправляем найденную magnet-ссылку в qBittorrent
