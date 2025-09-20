@@ -198,6 +198,89 @@ def delete_lottery(lottery_id):
 
 # --- НОВАЯ УПРОЩЕННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ ПУБЛИЧНЫЙ API ---
 
+def _format_eta(eta_seconds):
+    if eta_seconds is None or eta_seconds < 0:
+        return None
+    hours, remainder = divmod(int(eta_seconds), 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
+
+def _search_torrenter_api(search_query):
+    api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
+    print(f"Отправляю запрос в Torrenter API: {search_query}")
+    response = requests.get(api_url, timeout=15)
+    response.raise_for_status()
+    results = response.json()
+    normalized = []
+    for torrent in results or []:
+        magnet_link = torrent.get('magnet') or torrent.get('magnet_link')
+        if not magnet_link:
+            continue
+        try:
+            seeders = int(torrent.get('seeders', 0))
+        except (TypeError, ValueError):
+            seeders = 0
+        normalized.append({
+            "magnet": magnet_link,
+            "seeders": seeders,
+            "name": torrent.get('name'),
+        })
+    return normalized
+
+
+def _search_apibay_api(search_query):
+    api_url = f"https://apibay.org/q.php?q={requests.utils.quote(search_query)}&cat=201"
+    print(f"Отправляю запрос в apibay API: {search_query}")
+    response = requests.get(api_url, timeout=15)
+    response.raise_for_status()
+    data = response.json()
+    if isinstance(data, dict) and data.get('error'):
+        return []
+    normalized = []
+    for torrent in data or []:
+        info_hash = torrent.get('info_hash')
+        name = torrent.get('name')
+        if not info_hash or not name:
+            continue
+        try:
+            seeders = int(torrent.get('seeders', 0))
+        except (TypeError, ValueError):
+            seeders = 0
+        magnet_name = requests.utils.quote(name, safe='')
+        magnet_link = (
+            f"magnet:?xt=urn:btih:{info_hash}&dn={magnet_name}"
+            "&tr=udp://tracker.openbittorrent.com:6969/announce"
+            "&tr=udp://tracker.opentrackr.org:1337/announce"
+        )
+        normalized.append({
+            "magnet": magnet_link,
+            "seeders": seeders,
+            "name": name,
+        })
+    return normalized
+
+
+def _search_torrents(search_query):
+    search_strategies = (
+        _search_torrenter_api,
+        _search_apibay_api,
+    )
+    for strategy in search_strategies:
+        try:
+            results = strategy(search_query)
+            if results:
+                return results
+        except requests.exceptions.RequestException as exc:
+            print(f"Ошибка при обращении к {strategy.__name__}: {exc}")
+        except ValueError as exc:
+            print(f"Ошибка при обработке ответа {strategy.__name__}: {exc}")
+    return []
+
+
+# --- Маршрут запуска скачивания ---
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
@@ -239,8 +322,10 @@ def start_download(lottery_id):
         return jsonify({"success": False, "message": error_message}), 500
     finally:
         if qbt_client:
-            try: qbt_client.auth_log_out()
-            except: pass
+            try:
+                qbt_client.auth_log_out()
+            except Exception:
+                pass
 
 
 # --- Маршрут для статуса торрента ---
