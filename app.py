@@ -121,19 +121,18 @@ def find_and_cache_torrent_info_task(app_context, movie_id):
         print(f"[Кэширование] Начал поиск для: {search_query}")
         
         try:
-            # ИСПРАВЛЕНО: Создание объекта автоматически запускает поиск.
-            # Лишний вызов .start_search() удален.
             downloader = TorrentDownloader(search_query, './temp_torrents')
             
-            magnet = downloader.get_magnet()
+            # ИСПРАВЛЕНО: Обращаемся к свойствам объекта, а не к методам
+            magnet = downloader.magnet_link
             
             if magnet:
                 movie.magnet_link = magnet
-                movie.torrent_quality = downloader.get_quality()
-                movie.torrent_seeds = downloader.get_seeds()
+                movie.torrent_quality = downloader.quality
+                movie.torrent_seeds = downloader.seeds
                 movie.torrent_info_updated_at = datetime.utcnow()
                 db.session.commit()
-                print(f"[Кэширование] Успех! Информация для '{movie.name}' сохранена.")
+                print(f"[Кэширование] Успех! Информация для '{downloader.title}' сохранена.")
             else:
                 print(f"[Кэширование] Торрент для '{movie.name}' не найден.")
 
@@ -320,7 +319,7 @@ def get_torrent_status(lottery_id):
 
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
-    with app.app_context():
+    with app_context:
         db.drop_all()
         db.create_all()
     return "База данных полностью очищена и создана заново!"
