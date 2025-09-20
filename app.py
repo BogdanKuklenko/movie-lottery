@@ -233,14 +233,15 @@ def start_download(lottery_id):
         all_results = []
         for indexer_url in JACKETT_INDEXERS:
             try:
-                print(f"Ищу на {indexer_url.split('/indexers/')[1].split('/')[0]}...")
+                indexer_name = indexer_url.split('/indexers/')[1].split('/')[0]
+                print(f"Ищу на {indexer_name}...")
                 response = requests.get(indexer_url, params=params, timeout=10)
                 if response.status_code == 200:
                     root = ET.fromstring(response.content)
                     for item in root.findall('.//item'):
                         all_results.append(item)
             except requests.exceptions.RequestException as e:
-                print(f"Не удалось подключиться к трекеру: {e}")
+                print(f"Не удалось подключиться к {indexer_name}: {e}")
                 continue
 
         if not all_results:
@@ -255,11 +256,23 @@ def start_download(lottery_id):
             if seeders_element is not None:
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
-                    # Ищем ссылку на .torrent файл, она обычно в теге <link>
+                    # --- УЛЬТИМАТИВНЫЙ ПОИСК ССЫЛКИ НА .torrent ФАЙЛ ---
+                    current_url = None
+                    # Сначала ищем в <link>
                     link_tag = item.find('link')
                     if link_tag is not None and link_tag.text and '.torrent' in link_tag.text:
+                        current_url = link_tag.text
+                    
+                    # Если не нашли, ищем в <enclosure>
+                    if not current_url:
+                        enclosure_tag = item.find('enclosure')
+                        if enclosure_tag is not None and '.torrent' in enclosure_tag.get('url', ''):
+                            current_url = enclosure_tag.get('url')
+                    
+                    if current_url:
                         max_seeders = seeders
-                        best_torrent_file_url = link_tag.text
+                        best_torrent_file_url = current_url
+                    # ---------------------------------------------------------
 
         if not best_torrent_file_url:
             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти ссылку на .torrent файл."}), 404
