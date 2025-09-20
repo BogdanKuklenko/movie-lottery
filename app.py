@@ -249,6 +249,7 @@ def start_download(lottery_id):
 
         # 2. Ищем лучший торрент-ФАЙЛ среди ВСЕХ результатов
         best_torrent_file_url = None
+        best_torrent_item = None
         max_seeders = -1
 
         for item in all_results:
@@ -256,25 +257,35 @@ def start_download(lottery_id):
             if seeders_element is not None:
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
-                    # --- УЛЬТИМАТИВНЫЙ ПОИСК ССЫЛКИ НА .torrent ФАЙЛ ---
+                    max_seeders = seeders
+                    best_torrent_item = item # Запоминаем лучший <item> для отладки
+                    
+                    # Пытаемся найти ссылку на .torrent файл
                     current_url = None
-                    # Сначала ищем в <link>
                     link_tag = item.find('link')
                     if link_tag is not None and link_tag.text and '.torrent' in link_tag.text:
                         current_url = link_tag.text
                     
-                    # Если не нашли, ищем в <enclosure>
                     if not current_url:
                         enclosure_tag = item.find('enclosure')
                         if enclosure_tag is not None and '.torrent' in enclosure_tag.get('url', ''):
                             current_url = enclosure_tag.get('url')
                     
                     if current_url:
-                        max_seeders = seeders
                         best_torrent_file_url = current_url
-                    # ---------------------------------------------------------
 
         if not best_torrent_file_url:
+            # --- ДИАГНОСТИЧЕСКИЙ БЛОК ---
+            print("\n--- JACKETT DEBUG START ---")
+            print(f"Не удалось найти ссылку на .torrent файл для торрента с {max_seeders} сидами.")
+            if best_torrent_item is not None:
+                xml_string = ET.tostring(best_torrent_item, encoding='unicode')
+                print("Вот его содержимое:")
+                print(xml_string)
+            else:
+                print("Не удалось найти ни одного подходящего торрента в ответе.")
+            print("--- JACKETT DEBUG END ---\n")
+            # -----------------------------
             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти ссылку на .torrent файл."}), 404
 
         # 3. Скачиваем .torrent файл
