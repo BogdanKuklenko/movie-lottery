@@ -5,16 +5,14 @@ import json
 import random
 import re
 import string
-import time
 import requests
-import traceback # <-- ДОБАВЛЕНО ДЛЯ ДЕТАЛЬНОЙ ДИАГНОСТИКИ
+import xml.etree.ElementTree as ET # <-- НУЖНО для чтения ответа от Jackett
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
-from qbittorrentapi import Client, LoginFailed
-from rutracker_api import RutrackerApi
+from qbittorrentapi import Client
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -27,15 +25,16 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- Конфигурация qBittorrent ---
+# --- Конфигурация qBittorrent (без изменений) ---
 QBIT_HOST = os.environ.get('QBIT_HOST')
 QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
-# --- Конфигурация для Rutracker ---
-RUTRACKER_LOGIN = os.environ.get('RUTRACKER_LOGIN')
-RUTRACKER_PASSWORD = os.environ.get('RUTRACKER_PASSWORD')
+# --- НОВАЯ КОНФИГУРАЦИЯ ДЛЯ JACKETT ---
+# Данные, которые вы предоставили
+JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
+JACKETT_TORZNAB_URL = "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker/results/torznab/"
 
 
 # --- Модели Данных (без изменений) ---
@@ -202,58 +201,66 @@ def delete_lottery(lottery_id):
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
-# --- ОБНОВЛЕННЫЕ МАРШРУТЫ ДЛЯ ТОРРЕНТОВ (ЧЕРЕЗ RUTRACKER) ---
+
+# --- ПОЛНОСТЬЮ ПЕРЕПИСАННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ JACKETT ---
 
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
-    # Убираем отладочную строку, чтобы не мешала
     lottery = Lottery.query.get_or_404(lottery_id)
     if not lottery.result_name:
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
 
     qbt_client = None
     try:
-        # 1. Проверяем, не скачивается ли уже этот торрент
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
         category = f"lottery-{lottery.id}"
         if qbt_client.torrents_info(category=category):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
-        
-        # 2. Ищем на Rutracker
-        rt = RutrackerApi()
-        rt.login(RUTRACKER_LOGIN, RUTRACKER_PASSWORD)
+
+        # 1. Формируем поисковый запрос к Jackett
         search_query = f"{lottery.result_name} {lottery.result_year}"
-        results = rt.search(search_query)
-
-        if not results:
-            return jsonify({"success": False, "message": "Фильм не найден на Rutracker"}), 404
+        params = {"apikey": JACKETT_API_KEY, "Query": search_query}
         
-        # 3. Выбираем лучший торрент (по сидам) и получаем magnet-ссылку
-        best_torrent = max(results, key=lambda t: t.seeds)
-        magnet_link = rt.get_magnet(best_torrent.id)
+        print(f"Отправляю запрос в Jackett: {search_query}")
+        response = requests.get(JACKETT_TORZNAB_URL, params=params)
+        response.raise_for_status()
 
-        # 4. Отправляем magnet-ссылку в qBittorrent
-        qbt_client.torrents_add(
-            urls=magnet_link,
-            category=category,
-            is_sequential='true' # Включаем последовательную загрузку
-        )
+        # 2. Ищем лучший торрент в ответе от Jackett
+        root = ET.fromstring(response.content)
+        best_torrent = None
+        max_seeders = -1
+
+        for item in root.findall('.//item'):
+            # Ищем элемент с атрибутом seeders
+            seeders_element = item.find(".//torznab:attr[@name='seeders']", namespaces={'torznab': 'http://torznab.com/schemas/2012/xmlns'})
+            if seeders_element is not None:
+                seeders = int(seeders_element.get('value'))
+                if seeders > max_seeders:
+                    max_seeders = seeders
+                    # Magnet-ссылка обычно находится в элементе enclosure
+                    enclosure = item.find('enclosure')
+                    if enclosure is not None:
+                        best_torrent = enclosure.get('url')
+
+        if not best_torrent:
+            return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
+
+        # 3. Отправляем найденную magnet-ссылку в qBittorrent
+        print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
+        qbt_client.torrents_add(urls=best_torrent, category=category, is_sequential='true')
         return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
 
     except Exception as e:
-        # --- ИЗМЕНЕНИЕ: УЛУЧШЕННЫЙ ВЫВОД ОШИБКИ ---
-        tb_str = traceback.format_exc()
-        error_message = f"ПОЛНЫЙ ОТЧЕТ ОБ ОШИБКЕ:\n{tb_str}"
+        error_message = f"Ошибка при запуске скачивания через Jackett: {e}"
         print(error_message)
-        # Отправляем пользователю более общее сообщение, чтобы не раскрывать детали
-        user_message = f"Произошла внутренняя ошибка сервера: {e}"
-        return jsonify({"success": False, "message": user_message}), 500
+        return jsonify({"success": False, "message": error_message}), 500
     finally:
         if qbt_client:
             try: qbt_client.auth_log_out()
             except: pass
 
+# --- Маршрут для статуса торрента (без изменений) ---
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
@@ -278,6 +285,8 @@ def get_torrent_status(lottery_id):
             try: qbt_client.auth_log_out()
             except: pass
 
+
+# --- Служебные маршруты (без изменений) ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
