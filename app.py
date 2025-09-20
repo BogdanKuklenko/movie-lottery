@@ -6,13 +6,14 @@ import random
 import re
 import string
 import requests
+import xml.etree.ElementTree as ET
+import threading # <-- Для фоновых задач
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client
-from magnet_dht import MagnetDHT # <-- НОВАЯ, РЕАЛЬНАЯ БИБЛИОТЕКА
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -30,6 +31,15 @@ QBIT_HOST = os.environ.get('QBIT_HOST')
 QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
+
+# --- КОНФИГУРАЦИЯ JACKETT ---
+JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
+JACKETT_INDEXERS = [
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutor/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bitru/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker-ru/results/torznab/",
+]
 
 
 # --- Модели Данных ---
@@ -197,7 +207,74 @@ def delete_lottery(lottery_id):
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
 
-# --- ФИНАЛЬНАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ DHT ---
+# --- ФИНАЛЬНАЯ АСИНХРОННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ JACKETT ---
+
+def search_and_download_task(app_context, lottery_id, search_query):
+    """Эта функция будет выполняться в фоновом потоке, чтобы не блокировать сервер."""
+    with app_context:
+        print(f"[Фон] Начал поиск для: {search_query}")
+        
+        try:
+            # 1. Поиск по всем трекерам
+            params = {"apikey": JACKETT_API_KEY, "Query": search_query}
+            all_results = []
+            for indexer_url in JACKETT_INDEXERS:
+                try:
+                    indexer_name = indexer_url.split('/indexers/')[1].split('/')[0]
+                    print(f"[Фон] Ищу на {indexer_name}...")
+                    response = requests.get(indexer_url, params=params, timeout=20)
+                    if response.status_code == 200 and response.content:
+                        root = ET.fromstring(response.content)
+                        for item in root.findall('.//item'):
+                            all_results.append(item)
+                except requests.exceptions.RequestException as e:
+                    print(f"[Фон] Не удалось подключиться к {indexer_name}: {e}")
+                    continue
+
+            if not all_results:
+                print(f"[Фон] Фильм '{search_query}' не найден ни на одном из трекеров.")
+                return
+
+            # 2. Ищем лучший торрент-ФАЙЛ
+            best_torrent_file_url = None
+            max_seeders = -1
+            for item in all_results:
+                seeders_element = item.find(".//torznab:attr[@name='seeders']", namespaces={'torznab': 'http://torznab.com/schemas/2012/xmlns'})
+                if seeders_element is not None:
+                    seeders = int(seeders_element.get('value'))
+                    if seeders > max_seeders:
+                        current_url = None
+                        link_tag = item.find('link')
+                        if link_tag is not None and link_tag.text and '.torrent' in link_tag.text:
+                            current_url = link_tag.text
+                        if not current_url:
+                            enclosure_tag = item.find('enclosure')
+                            if enclosure_tag is not None and '.torrent' in enclosure_tag.get('url', ''):
+                                current_url = enclosure_tag.get('url')
+                        if current_url:
+                            max_seeders = seeders
+                            best_torrent_file_url = current_url
+
+            if not best_torrent_file_url:
+                print(f"[Фон] Фильм '{search_query}' найден, но ссылка на .torrent файл не найдена.")
+                return
+
+            # 3. Скачиваем .torrent файл
+            print(f"[Фон] Найдена ссылка с {max_seeders} сидами. Скачиваю .torrent файл...")
+            torrent_file_response = requests.get(best_torrent_file_url, timeout=20)
+            torrent_file_response.raise_for_status()
+            torrent_content = torrent_file_response.content
+
+            # 4. Отправляем в qBittorrent
+            print("[Фон] Отправляю файл в qBittorrent.")
+            qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+            qbt_client.auth_log_in()
+            qbt_client.torrents_add(torrent_files=torrent_content, category=f"lottery-{lottery_id}", is_sequential='true')
+            qbt_client.auth_log_out()
+            print(f"[Фон] Задача для '{search_query}' успешно завершена!")
+        except Exception as e:
+            print(f"[Фон] Произошла ошибка в фоновой задаче: {e}")
+
 
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
@@ -205,48 +282,27 @@ def start_download(lottery_id):
     if not lottery.result_name:
         return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
 
-    qbt_client = None
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        category = f"lottery-{lottery.id}"
-        if qbt_client.torrents_info(category=category):
+        if qbt_client.torrents_info(category=f"lottery-{lottery_id}"):
+            qbt_client.auth_log_out()
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
-
-        # 1. Ищем торренты напрямую в сети DHT
-        search_query = f"{lottery.result_name} {lottery.result_year}"
-        print(f"Отправляю запрос в DHT: {search_query}")
-        
-        with MagnetDHT() as dht:
-            # Ищем в течение 15 секунд, берем до 20 результатов
-            results = list(dht.search(search_query, timeout=15, limit=20))
-
-        if not results:
-            return jsonify({"success": False, "message": "Фильм не найден в сети DHT."}), 404
-
-        # 2. Ищем лучший торрент по сидам (если информация о них есть)
-        # Если сидов нет, просто берем первый результат
-        best_torrent = max(results, key=lambda t: t.seeders) if any(t.seeders for t in results) else results[0]
-        
-        magnet_link = best_torrent.magnet
-        seeders = best_torrent.seeders
-        
-        # 3. Отправляем magnet-ссылку в qBittorrent
-        print(f"Найдена лучшая ссылка с {seeders} сидами. Отправляю в qBittorrent.")
-        qbt_client.torrents_add(urls=magnet_link, category=category, is_sequential='true')
-        return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
-
+        qbt_client.auth_log_out()
     except Exception as e:
-        error_message = f"Ошибка при запуске скачивания через DHT: {e}"
-        print(error_message)
-        return jsonify({"success": False, "message": error_message}), 500
-    finally:
-        if qbt_client:
-            try: qbt_client.auth_log_out()
-            except: pass
+        print(f"Не удалось подключиться к qBittorrent для проверки: {e}")
+
+    # Запускаем долгий поиск в отдельном потоке
+    search_query = f"{lottery.result_name} {lottery.result_year}"
+    thread = threading.Thread(target=search_and_download_task, args=(app.app_context(), lottery_id, search_query))
+    thread.daemon = True
+    thread.start()
+
+    # Мгновенно возвращаем ответ пользователю
+    return jsonify({"success": True, "message": "Поиск запущен в фоновом режиме! Загрузка скоро начнется."})
 
 
-# --- Маршрут для статуса торрента ---
+# --- Маршрут для статуса торрента (без изменений) ---
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
@@ -272,7 +328,7 @@ def get_torrent_status(lottery_id):
             except: pass
 
 
-# --- Служебные маршруты ---
+# --- Служебные маршруты (без изменений) ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
