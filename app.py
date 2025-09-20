@@ -230,7 +230,7 @@ def start_download(lottery_id):
             try:
                 indexer_name = indexer_url.split('/indexers/')[1].split('/')[0]
                 print(f"Ищу на {indexer_name}...")
-                response = requests.get(indexer_url, params=params, timeout=10)
+                response = requests.get(indexer_url, params=params, timeout=10) # 10 секунд на ответ
                 if response.status_code == 200:
                     root = ET.fromstring(response.content)
                     for item in root.findall('.//item'):
