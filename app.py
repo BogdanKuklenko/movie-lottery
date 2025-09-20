@@ -212,6 +212,7 @@ def _format_eta(eta_seconds):
 
 
 
+
 def _search_torrenter_api(search_query):
     api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
     print(f"Отправляю запрос в Torrenter API: {search_query}")
@@ -307,7 +308,6 @@ def start_download(lottery_id):
         if not magnet_link:
             return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
 
-        max_seeders = best_torrent.get('seeders', 0)
 
         # 3. Отправляем найденную magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
