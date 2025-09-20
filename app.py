@@ -196,7 +196,26 @@ def delete_lottery(lottery_id):
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
 
-# --- НОВАЯ УПРОЩЕННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ ПУБЛИЧНЫЙ API ---
+# --- ФИНАЛЬНАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ НОВЫЙ API ---
+
+def _search_apibay(search_query):
+    """Ищет торренты через API apibay.org."""
+    try:
+        # API apibay.org требует, чтобы поиск был по ID или названию, но без года
+        # Мы убираем год для лучшего соответствия
+        query_without_year = re.sub(r'\s+\d{4}$', '', search_query)
+        api_url = f"https://apibay.org/q.php?q={requests.utils.quote(query_without_year)}"
+        print(f"Отправляю запрос в apibay API: {query_without_year}")
+        response = requests.get(api_url, timeout=15)
+        response.raise_for_status()
+        results = response.json()
+        
+        # Фильтруем результаты, чтобы найти видео
+        video_results = [r for r in results if r.get('name') != '0' and r.get('info_hash') != '0']
+        return video_results
+    except Exception as e:
+        print(f"Ошибка при обращении к apibay API: {e}")
+        return []
 
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
@@ -212,14 +231,9 @@ def start_download(lottery_id):
         if qbt_client.torrents_info(category=category):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
 
-        # 1. Формируем поисковый запрос к API
+        # 1. Ищем торренты через новый API
         search_query = f"{lottery.result_name} {lottery.result_year}"
-        api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
-        
-        print(f"Отправляю запрос в API: {search_query}")
-        response = requests.get(api_url, timeout=15)
-        response.raise_for_status()
-        results = response.json()
+        results = _search_apibay(search_query)
 
         if not results:
             return jsonify({"success": False, "message": "Фильм не найден через API."}), 404
@@ -228,18 +242,30 @@ def start_download(lottery_id):
         best_torrent = None
         max_seeders = -1
         for torrent in results:
-            # API может возвращать сиды как строку или число, приводим к int
             seeders = int(torrent.get('seeders', 0))
             if seeders > max_seeders:
                 max_seeders = seeders
                 best_torrent = torrent
         
-        if not best_torrent or not best_torrent.get('magnet'):
-             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
+        if not best_torrent:
+             return jsonify({"success": False, "message": "Фильм найден, но не удалось выбрать лучший торрент."}), 404
 
-        magnet_link = best_torrent.get('magnet')
+        # 3. Собираем magnet-ссылку вручную (самый надежный способ)
+        info_hash = best_torrent.get('info_hash')
+        name = best_torrent.get('name')
+        # Стандартные и рабочие трекеры для magnet-ссылок
+        trackers = [
+            "udp://tracker.openbittorrent.com:80",
+            "udp://tracker.opentrackr.org:1337/announce",
+            "udp://tracker.coppersurfer.tk:6969/announce",
+            "udp://9.rarbg.to:2920/announce",
+            "udp://9.rarbg.me:2780/announce",
+        ]
+        magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={requests.utils.quote(name)}"
+        for tracker in trackers:
+            magnet_link += f"&tr={requests.utils.quote(tracker)}"
 
-        # 3. Отправляем найденную magnet-ссылку в qBittorrent
+        # 4. Отправляем magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
         qbt_client.torrents_add(urls=magnet_link, category=category, is_sequential='true')
         return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
