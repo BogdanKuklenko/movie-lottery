@@ -33,7 +33,18 @@ QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
 # --- КОНФИГУРАЦИЯ JACKETT ---
 JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
-JACKETT_TORZNAB_URL = "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker/results/torznab/"
+# Список всех ваших трекеров
+JACKETT_INDEXERS = [
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bitru/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/gtorrentpro/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutor/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/megapeer/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker-ru/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bigfangroup/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/noname-club/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker/results/torznab/",
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/uztracker/results/torznab/",
+]
 
 
 # --- Модели Данных ---
@@ -217,48 +228,55 @@ def start_download(lottery_id):
         if qbt_client.torrents_info(category=category):
             return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
 
-        # 1. Формируем поисковый запрос к Jackett
+        # --- НОВЫЙ ПОДХОД: Поиск по всем трекерам ---
         search_query = f"{lottery.result_name} {lottery.result_year}"
         params = {"apikey": JACKETT_API_KEY, "Query": search_query}
         
-        print(f"Отправляю запрос в Jackett: {search_query}")
-        response = requests.get(JACKETT_TORZNAB_URL, params=params)
-        response.raise_for_status()
+        all_results = []
+        # 1. Перебираем все трекеры и собираем результаты
+        for indexer_url in JACKETT_INDEXERS:
+            try:
+                print(f"Ищу на {indexer_url.split('/indexers/')[1].split('/')[0]}...")
+                response = requests.get(indexer_url, params=params, timeout=10) # 10 секунд на ответ
+                if response.status_code == 200:
+                    root = ET.fromstring(response.content)
+                    for item in root.findall('.//item'):
+                        all_results.append(item)
+            except requests.exceptions.RequestException as e:
+                print(f"Не удалось подключиться к трекеру: {e}")
+                continue
 
-        # 2. Ищем лучший торрент в ответе от Jackett
-        root = ET.fromstring(response.content)
+        if not all_results:
+            return jsonify({"success": False, "message": "Фильм не найден ни на одном из трекеров."}), 404
+
+        # 2. Ищем лучший торрент среди ВСЕХ результатов
         best_torrent_link = None
         max_seeders = -1
 
-        for item in root.findall('.//item'):
+        for item in all_results:
             seeders_element = item.find(".//torznab:attr[@name='seeders']", namespaces={'torznab': 'http://torznab.com/schemas/2012/xmlns'})
             if seeders_element is not None:
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
-                    max_seeders = seeders
-                    
-                    # --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Ищем ссылку в ТРЕХ местах ---
                     current_link = None
-                    # 1. Ищем в <link>
+                    # Ищем magnet-ссылку в трех возможных местах
                     link_tag = item.find('link')
                     if link_tag is not None and link_tag.text and link_tag.text.startswith('magnet:'):
                         current_link = link_tag.text
                     
-                    # 2. Если не нашли, ищем в <enclosure>
                     if not current_link:
                         enclosure_tag = item.find('enclosure')
                         if enclosure_tag is not None and enclosure_tag.get('url', '').startswith('magnet:'):
                             current_link = enclosure_tag.get('url')
                     
-                    # 3. Если снова не нашли, ищем в <guid>
                     if not current_link:
                         guid_tag = item.find('guid')
                         if guid_tag is not None and guid_tag.text and guid_tag.text.startswith('magnet:'):
                             current_link = guid_tag.text
                     
                     if current_link:
+                        max_seeders = seeders
                         best_torrent_link = current_link
-                    # ---------------------------------------------------------
 
         if not best_torrent_link:
             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
