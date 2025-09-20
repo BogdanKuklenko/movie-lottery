@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const widgetEtaText = widget.querySelector('#widget-eta-text');
     let statusPollInterval = null;
 
-    // --- ЛОГИКА ВИДЖЕТА ---
+    // --- ЛОГИКА ВИДЖЕТА (без изменений) ---
     const showWidget = (movieName) => {
         widgetMovieName.textContent = `Загрузка: ${movieName}`;
         widgetProgressText.textContent = '...';
@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const startTorrentStatusPolling = (lotteryId, movieName) => {
         if (statusPollInterval) clearInterval(statusPollInterval);
-        
+        showWidget(movieName);
         const poll = async () => {
             try {
                 const response = await fetch(`/api/torrent-status/${lotteryId}`);
@@ -54,17 +54,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const torrentButton = document.querySelector(`.gallery-item[data-lottery-id="${lotteryId}"] .torrent-button`);
 
                 if (data.status === 'not_found' || data.status === 'error') {
-                    if (torrentButton) torrentButton.className = 'torrent-button';
+                    // Оставляем виджет видимым, но можем показать статус ожидания
                 } else {
                     updateWidget(data);
-                    if (torrentButton) {
-                        torrentButton.className = 'torrent-button';
-                        if (data.status.includes('downloading')) {
-                            torrentButton.classList.add('status-downloading');
-                        } else if (data.status.includes('seeding') || data.status.includes('completed') || parseFloat(data.progress) >= 100) {
-                            torrentButton.classList.add('status-seeding');
-                            if (statusPollInterval) clearInterval(statusPollInterval);
-                        }
+                    if (data.status.includes('seeding') || data.status.includes('completed') || parseFloat(data.progress) >= 100) {
+                        if (statusPollInterval) clearInterval(statusPollInterval);
                     }
                 }
             } catch (error) {
@@ -76,40 +70,28 @@ document.addEventListener('DOMContentLoaded', () => {
         statusPollInterval = setInterval(poll, 3000);
     };
     
-    // --- ИСПРАВЛЕННАЯ ЛОГИКА СКАЧИВАНИЯ ---
-    const handleDownloadRequest = async (lotteryId, movieName) => {
-        showWidget(movieName); // Сразу показываем виджет со статусом "Загрузка..."
-
+    // --- ОБНОВЛЕННАЯ ЛОГИКА СКАЧИВАНИЯ ---
+    const handleDownloadRequest = async (movieId, movieName, lotteryId) => {
         try {
-            const response = await fetch(`/api/start-download/${lotteryId}`, {
+            const response = await fetch(`/api/start-download/${movieId}`, {
                 method: 'POST'
             });
-
-            // Эта проверка решает проблему с ошибкой: если сервер вернет HTML вместо JSON,
-            // мы перехватим это и покажем понятную ошибку вместо падения скрипта.
-            const contentType = response.headers.get("content-type");
-            if (!contentType || !contentType.includes("application/json")) {
-                 const errorText = await response.text();
-                 console.error("Сервер вернул не JSON:", errorText);
-                 throw new Error('Произошла критическая ошибка на сервере.');
-            }
             
             const data = await response.json();
-
-            alert(data.message); // Показываем пользователю ответ сервера (успех или "не найдено")
+            alert(data.message); // Показываем пользователю ответ сервера
 
             if (data.success) {
-                // Если сервер ответил, что загрузка началась, запускаем опрос статуса
+                // Если загрузка началась, запускаем опрос статуса виджета
                 startTorrentStatusPolling(lotteryId, movieName);
             }
             
         } catch (error) {
             console.error('Критическая ошибка при запуске скачивания:', error);
-            alert(`Критическая ошибка при запуске скачивания: ${error.message}`);
+            alert(`Критическая ошибка: ${error.message}`);
         }
     };
     
-    // --- ФОРМАТИРОВАНИЕ ДАТ ---
+    // --- ФОРМАТИРОВАНИЕ ДАТ (без изменений) ---
     dateOverlays.forEach(overlay => {
         const isoDate = overlay.dataset.date;
         if (isoDate) {
@@ -117,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- ЛОГИКА МОДАЛЬНОГО ОКНА ---
+    // --- ОБНОВЛЕННАЯ ЛОГИКА МОДАЛЬНОГО ОКНА ---
     const openModal = async (lotteryId) => {
         modalOverlay.style.display = 'flex';
         modalWinnerInfo.innerHTML = '<div class="loader"></div>';
@@ -137,6 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ratingClass = hasRating ? (winner.rating_kp >= 7 ? 'rating-high' : winner.rating_kp >= 5 ? 'rating-medium' : 'rating-low') : '';
                 const ratingBadgeHtml = hasRating ? `<div class="rating-badge ${ratingClass}">${winner.rating_kp.toFixed(1)}</div>` : '';
 
+                // --- НОВОЕ: Отображение информации о торренте ---
+                const torrentInfoHtml = winner.has_magnet 
+                    ? `<p class="meta-info torrent-info">✅ Торрент найден: <strong>${winner.quality || 'N/A'}</strong> / Сиды: <strong>${winner.seeds || '?'}</strong></p>`
+                    : `<p class="meta-info torrent-info">⏳ Идет поиск торрента...</p>`;
+
                 modalWinnerInfo.innerHTML = `
                     <div class="winner-card">
                         <div class="winner-poster">
@@ -146,17 +133,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="winner-details">
                             <h2>${winner.name}</h2>
                             <p class="meta-info">${winner.year || ''} / ${winner.genres || 'н/д'} / ${winner.countries || 'н/д'}</p>
+                            ${torrentInfoHtml}
                             <p class="description">${winner.description || 'Описание отсутствует.'}</p>
                         </div>
                     </div>
                 `;
-                const losers = data.movies.filter(movie => movie.name !== winner.name);
+
+                const losers = data.movies.filter(movie => movie.id !== winner.id);
                 modalLoserList.innerHTML = '';
                 if (losers.length > 0) {
                     losers.forEach(loser => {
                         const li = document.createElement('li');
                         li.className = 'loser-item';
-                        li.innerHTML = `<img class="loser-poster" src="${loser.poster || 'https://via.placeholder.com/40x60.png?text=?'}" alt="${loser.name}"><span class="loser-name">${loser.name}</span>`;
+                        // --- НОВОЕ: Отображение статуса торрента для проигравших ---
+                        const loserTorrentInfo = loser.has_magnet
+                            ? `<span class="loser-quality">${loser.quality || ''}</span>`
+                            : `<div class="loader-small-inline"></div>`;
+                        li.innerHTML = `
+                            <div class="loser-poster-container">
+                                <img class="loser-poster" src="${loser.poster || 'https://via.placeholder.com/40x60.png?text=?'}" alt="${loser.name}">
+                                ${loserTorrentInfo}
+                            </div>
+                            <span class="loser-name">${loser.name}</span>`;
                         modalLoserList.appendChild(li);
                     });
                     modalLoserListContainer.style.display = 'block';
@@ -176,6 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
+    // --- ОБНОВЛЕННАЯ ЛОГИКА УДАЛЕНИЯ (без изменений) ---
     const deleteLottery = async (lotteryId, cardElement) => {
         try {
             const response = await fetch(`/delete-lottery/${lotteryId}`, { method: 'POST' });
@@ -189,18 +188,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- ОБНОВЛЕННЫЙ ОБРАБОТЧИК КЛИКОВ ---
     if (gallery) {
         gallery.addEventListener('click', (e) => {
             const torrentButton = e.target.closest('.torrent-button');
             const deleteButton = e.target.closest('.delete-button');
             const galleryItem = e.target.closest('.gallery-item');
             if (!galleryItem) return;
+
             const lotteryId = galleryItem.dataset.lotteryId;
+            const movieId = galleryItem.dataset.movieId; // Используем ID фильма
             const movieName = galleryItem.dataset.movieName;
 
             if (torrentButton) {
                 e.stopPropagation();
-                handleDownloadRequest(lotteryId, movieName);
+                handleDownloadRequest(movieId, movieName, lotteryId);
             } else if (deleteButton) {
                 e.stopPropagation();
                 if (confirm('Вы уверены, что хотите удалить эту лотерею?')) {
@@ -212,48 +214,86 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- ЛОГИКА ЗАКРЫТИЯ МОДАЛЬНОГО ОКНА (без изменений) ---
     const closeModal = () => { if(modalOverlay) modalOverlay.style.display = 'none'; };
     if (closeButton) closeButton.addEventListener('click', closeModal);
     if (modalOverlay) modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalOverlay && modalOverlay.style.display !== 'none') closeModal(); });
     
+    // --- ОБНОВЛЕННАЯ ЛОГИКА ОПРОСА ---
     const startHistoryPolling = () => {
-        const waitingCards = document.querySelectorAll('.waiting-card');
-        if (waitingCards.length === 0) return;
-        let waitingIds = Array.from(waitingCards).map(card => card.dataset.lotteryId);
+        const pollableCards = document.querySelectorAll('.gallery-item[data-pollable="true"]');
+        if (pollableCards.length === 0) return;
+
+        let pollableIds = Array.from(pollableCards).map(card => card.dataset.lotteryId);
+        
         const pollInterval = setInterval(async () => {
-            if (waitingIds.length === 0) {
+            const currentIds = [...new Set(pollableIds)]; // Копируем и убираем дубликаты
+            if (currentIds.length === 0) {
                 clearInterval(pollInterval);
                 return;
             }
-            for (const id of waitingIds) {
+
+            for (const id of currentIds) {
                 try {
                     const response = await fetch(`/api/result/${id}`);
                     const data = await response.json();
+                    
+                    // Обновляем карточку, если розыгрыш состоялся
                     if (data.result) {
-                        updateCardOnPage(id, data);
-                        waitingIds = waitingIds.filter(waitingId => waitingId !== id);
+                        const card = document.querySelector(`.gallery-item[data-lottery-id="${id}"]`);
+                        if(card && card.classList.contains('waiting-card')){
+                             updateCardOnPage(id, data.result);
+                        }
                     }
+
+                    // Обновляем инфо о торрентах для всех фильмов в лотерее
+                    data.movies.forEach(movie => {
+                         if (movie.has_magnet) {
+                            const movieCard = document.querySelector(`.gallery-item[data-movie-id="${movie.id}"]`);
+                            if (movieCard) {
+                                const torrentBtn = movieCard.querySelector('.torrent-button');
+                                if(torrentBtn) torrentBtn.disabled = false;
+                            }
+                         }
+                    });
+
+                    // Если все фильмы в лотерее имеют magnet, прекращаем опрос для этой лотереи
+                    const allMagnetsFound = data.movies.every(m => m.has_magnet);
+                    const isDrawn = !!data.result;
+                    if (isDrawn && allMagnetsFound) {
+                        pollableIds = pollableIds.filter(pollId => pollId !== id);
+                    }
+
                 } catch (error) {
-                    console.error(`Failed to poll lottery ${id}:`, error);
+                    console.error(`Ошибка при опросе лотереи ${id}:`, error);
+                    // Удаляем ID из опроса при ошибке, чтобы не спамить
+                    pollableIds = pollableIds.filter(pollId => pollId !== id);
                 }
             }
         }, 7000);
     };
 
-    const updateCardOnPage = (lotteryId, lotteryData) => {
+    // --- ОБНОВЛЕННАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ КАРТОЧКИ ---
+    const updateCardOnPage = (lotteryId, winnerData) => {
         const card = document.querySelector(`.waiting-card[data-lottery-id="${lotteryId}"]`);
         if (!card) return;
-        card.className = 'gallery-item';
-        card.dataset.movieName = lotteryData.result.name;
+        
+        card.className = 'gallery-item'; // Убираем класс ожидания
+        card.dataset.movieId = winnerData.id; // Добавляем ID фильма
+        card.dataset.movieName = winnerData.name;
+        
+        // Кнопка скачивания изначально неактивна, пока поллинг не подтвердит наличие magnet
+        const torrentButtonHtml = `<button class="torrent-button" title="Скачать фильм" disabled>&#x2913;</button>`;
+
         card.innerHTML = `
             <div class="action-buttons">
-                <button class="torrent-button" title="Скачать фильм">&#x2913;</button>
+                ${torrentButtonHtml}
                 <button class="delete-button" title="Удалить лотерею">&times;</button>
             </div>
-            <img src="${lotteryData.result.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="${lotteryData.result.name}">
-            <div class="date-overlay" data-date="${lotteryData.createdAt}">
-                ${new Date(lotteryData.createdAt).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric'})}
+            <img src="${winnerData.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="${winnerData.name}">
+            <div class="date-overlay" data-date="${winnerData.createdAt}">
+                ${new Date(winnerData.createdAt).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric'})}
             </div>
         `;
     };
