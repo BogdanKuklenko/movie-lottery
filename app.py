@@ -33,16 +33,11 @@ QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
 # --- КОНФИГУРАЦИЯ JACKETT ---
 JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
+# --- ОПТИМИЗАЦИЯ: Оставляем только 3 самых быстрых и надежных публичных трекера ---
 JACKETT_INDEXERS = [
+    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutor/results/torznab/",
     "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bitru/results/torznab/",
     "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/gtorrentpro/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutor/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/megapeer/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker-ru/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/bigfangroup/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/noname-club/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker/results/torznab/",
-    "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/uztracker/results/torznab/",
 ]
 
 
@@ -249,7 +244,6 @@ def start_download(lottery_id):
 
         # 2. Ищем лучший торрент-ФАЙЛ среди ВСЕХ результатов
         best_torrent_file_url = None
-        best_torrent_item = None
         max_seeders = -1
 
         for item in all_results:
@@ -257,10 +251,6 @@ def start_download(lottery_id):
             if seeders_element is not None:
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
-                    max_seeders = seeders
-                    best_torrent_item = item # Запоминаем лучший <item> для отладки
-                    
-                    # Пытаемся найти ссылку на .torrent файл
                     current_url = None
                     link_tag = item.find('link')
                     if link_tag is not None and link_tag.text and '.torrent' in link_tag.text:
@@ -272,20 +262,10 @@ def start_download(lottery_id):
                             current_url = enclosure_tag.get('url')
                     
                     if current_url:
+                        max_seeders = seeders
                         best_torrent_file_url = current_url
 
         if not best_torrent_file_url:
-            # --- ДИАГНОСТИЧЕСКИЙ БЛОК ---
-            print("\n--- JACKETT DEBUG START ---")
-            print(f"Не удалось найти ссылку на .torrent файл для торрента с {max_seeders} сидами.")
-            if best_torrent_item is not None:
-                xml_string = ET.tostring(best_torrent_item, encoding='unicode')
-                print("Вот его содержимое:")
-                print(xml_string)
-            else:
-                print("Не удалось найти ни одного подходящего торрента в ответе.")
-            print("--- JACKETT DEBUG END ---\n")
-            # -----------------------------
             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти ссылку на .torrent файл."}), 404
 
         # 3. Скачиваем .torrent файл
