@@ -33,7 +33,7 @@ QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
 
-# --- Модели Данных (ОБНОВЛЕНО) ---
+# --- Модели Данных ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -52,7 +52,6 @@ class Movie(db.Model):
     rating_kp = db.Column(db.Float, nullable=True)
     genres = db.Column(db.String(200), nullable=True)
     countries = db.Column(db.String(200), nullable=True)
-    # --- НОВЫЕ ПОЛЯ ДЛЯ КЭШИРОВАНИЯ ТОРРЕНТОВ ---
     magnet_link = db.Column(db.Text, nullable=True)
     torrent_quality = db.Column(db.String(50), nullable=True)
     torrent_seeds = db.Column(db.Integer, nullable=True)
@@ -110,12 +109,8 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
-# --- НОВАЯ ЛОГИКА ПОИСКА И КЭШИРОВАНИЯ ТОРРЕНТОВ ---
-
+# --- Логика поиска и кэширования ---
 def find_and_cache_torrent_info_task(app_context, movie_id):
-    """
-    Ищет лучший торрент для ОДНОГО фильма и сохраняет информацию в БД.
-    """
     with app_context:
         movie = Movie.query.get(movie_id)
         if not movie:
@@ -126,9 +121,9 @@ def find_and_cache_torrent_info_task(app_context, movie_id):
         print(f"[Кэширование] Начал поиск для: {search_query}")
         
         try:
-            # Используем временную папку, как того требует библиотека
+            # ИСПРАВЛЕНО: Создание объекта автоматически запускает поиск.
+            # Лишний вызов .start_search() удален.
             downloader = TorrentDownloader(search_query, './temp_torrents')
-            downloader.start_search()
             
             magnet = downloader.get_magnet()
             
@@ -169,7 +164,7 @@ def create_lottery():
     lottery_id = generate_unique_id()
     new_lottery = Lottery(id=lottery_id)
     db.session.add(new_lottery)
-    db.session.flush() # Получаем ID лотереи до коммита
+    db.session.flush()
 
     movies_to_process = []
     for movie_data in movies_json:
@@ -179,7 +174,7 @@ def create_lottery():
             genres=movie_data.get('genres'), countries=movie_data.get('countries'), lottery_id=new_lottery.id
         )
         db.session.add(new_movie)
-        db.session.flush() # Получаем ID фильма до коммита
+        db.session.flush()
         movies_to_process.append(new_movie.id)
 
     max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
@@ -192,7 +187,6 @@ def create_lottery():
     
     db.session.commit()
 
-    # Запускаем фоновый поиск для КАЖДОГО нового фильма
     for movie_id in movies_to_process:
         thread = threading.Thread(target=find_and_cache_torrent_info_task, args=(app.app_context(), movie_id))
         thread.daemon = True
@@ -218,7 +212,8 @@ def play_lottery(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     result_obj = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
     background_photos = get_background_photos()
-    return render_template('play.html', lottery=lottery, result=result_obj, background_photos=background_photos)
+    movies_for_js = [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies]
+    return render_template('play.html', lottery=lottery, result=result_obj, background_photos=background_photos, movies_for_js=json.dumps(movies_for_js))
 
 @app.route('/draw/<lottery_id>', methods=['POST'])
 def draw_winner(lottery_id):
@@ -236,7 +231,6 @@ def draw_winner(lottery_id):
 def get_result_data(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
-    # ОБНОВЛЕНО: передаем больше данных о торрентах
     movies_data = [{
         "id": m.id, "name": m.name, "poster": m.poster, "year": m.year, "description": m.description,
         "rating_kp": m.rating_kp, "genres": m.genres, "countries": m.countries,
@@ -254,7 +248,6 @@ def delete_lottery(lottery_id):
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
-# --- ОБНОВЛЕННАЯ ЛОГИКА СКАЧИВАНИЯ ---
 @app.route('/api/start-download/<movie_id>', methods=['POST'])
 def start_download(movie_id):
     movie = Movie.query.get_or_404(movie_id)
@@ -265,10 +258,7 @@ def start_download(movie_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        
-        # Просто добавляем готовый magnet
         qbt_client.torrents_add(urls=movie.magnet_link, category=f"lottery-{movie.lottery_id}", is_sequential='true')
-        
         qbt_client.auth_log_out()
         return jsonify({"success": True, "message": f"Загрузка '{movie.name}' началась!"})
     except Exception as e:
@@ -276,13 +266,7 @@ def start_download(movie_id):
         print(error_message)
         return jsonify({"success": False, "message": error_message}), 500
 
-
-# --- ЛОГИКА ОБНОВЛЕНИЯ СИДОВ ---
 def update_all_seeders_task(app_context):
-    """
-    Проходит по всем фильмам в БД, которым больше суток, и обновляет инфо о сидах.
-    Эту функцию нужно вызывать по расписанию (например, раз в день).
-    """
     with app_context:
         print("[Обновление] Запущена задача обновления сидов.")
         movies_to_update = Movie.query.filter(
@@ -302,9 +286,7 @@ def update_all_seeders_task(app_context):
 
 @app.route('/api/trigger-seed-update/<secret_key>')
 def trigger_seed_update(secret_key):
-    # Этот маршрут можно вызывать через cron для автоматического обновления
-    # Для безопасности используется простой секретный ключ
-    if secret_key != "YOUR_SUPER_SECRET_KEY": # Замените на свой ключ
+    if secret_key != "YOUR_SUPER_SECRET_KEY":
         return "Unauthorized", 401
     
     thread = threading.Thread(target=update_all_seeders_task, args=(app.app_context(),))
@@ -312,8 +294,6 @@ def trigger_seed_update(secret_key):
     thread.start()
     return "Задача обновления сидов запущена в фоновом режиме.", 200
 
-
-# --- Маршрут для статуса торрента (без изменений) ---
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
@@ -338,7 +318,6 @@ def get_torrent_status(lottery_id):
             try: qbt_client.auth_log_out()
             except: pass
 
-# --- Служебные маршруты ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
