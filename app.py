@@ -6,14 +6,14 @@ import random
 import re
 import string
 import requests
-import threading # <-- Для фоновых задач
+import threading
 from flask import Flask, render_template, request, jsonify, url_for
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client
-from torrentp import TorrentDownloader # <-- ИСПРАВЛЕННЫЙ ИМПОРТ
+from torrentp import TorrentDownloader
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -32,7 +32,8 @@ QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
-# --- Модели Данных (без изменений) ---
+
+# --- Модели Данных (ОБНОВЛЕНО) ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -51,6 +52,11 @@ class Movie(db.Model):
     rating_kp = db.Column(db.Float, nullable=True)
     genres = db.Column(db.String(200), nullable=True)
     countries = db.Column(db.String(200), nullable=True)
+    # --- НОВЫЕ ПОЛЯ ДЛЯ КЭШИРОВАНИЯ ТОРРЕНТОВ ---
+    magnet_link = db.Column(db.Text, nullable=True)
+    torrent_quality = db.Column(db.String(50), nullable=True)
+    torrent_seeds = db.Column(db.Integer, nullable=True)
+    torrent_info_updated_at = db.Column(db.DateTime, nullable=True)
 
 class BackgroundPhoto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -61,7 +67,7 @@ class BackgroundPhoto(db.Model):
     z_index = db.Column(db.Integer, nullable=False)
     added_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
-# --- Вспомогательные функции (без изменений) ---
+# --- Вспомогательные функции ---
 def get_movie_data_from_kinopoisk(query):
     headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
@@ -104,7 +110,43 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
-# --- Маршруты (без изменений) ---
+# --- НОВАЯ ЛОГИКА ПОИСКА И КЭШИРОВАНИЯ ТОРРЕНТОВ ---
+
+def find_and_cache_torrent_info_task(app_context, movie_id):
+    """
+    Ищет лучший торрент для ОДНОГО фильма и сохраняет информацию в БД.
+    """
+    with app_context:
+        movie = Movie.query.get(movie_id)
+        if not movie:
+            print(f"[Кэширование] Фильм с ID {movie_id} не найден.")
+            return
+
+        search_query = f"{movie.name} {movie.year}"
+        print(f"[Кэширование] Начал поиск для: {search_query}")
+        
+        try:
+            # Используем временную папку, как того требует библиотека
+            downloader = TorrentDownloader(search_query, './temp_torrents')
+            downloader.start_search()
+            
+            magnet = downloader.get_magnet()
+            
+            if magnet:
+                movie.magnet_link = magnet
+                movie.torrent_quality = downloader.get_quality()
+                movie.torrent_seeds = downloader.get_seeds()
+                movie.torrent_info_updated_at = datetime.utcnow()
+                db.session.commit()
+                print(f"[Кэширование] Успех! Информация для '{movie.name}' сохранена.")
+            else:
+                print(f"[Кэширование] Торрент для '{movie.name}' не найден.")
+
+        except Exception as e:
+            print(f"[Кэширование] Ошибка при поиске для '{movie.name}': {e}")
+
+
+# --- Маршруты ---
 @app.route('/')
 def index():
     background_photos = get_background_photos()
@@ -123,16 +165,23 @@ def create_lottery():
     movies_json = request.json.get('movies')
     if not movies_json or len(movies_json) < 2:
         return jsonify({"error": "Нужно добавить хотя бы два фильма"}), 400
+    
     lottery_id = generate_unique_id()
     new_lottery = Lottery(id=lottery_id)
     db.session.add(new_lottery)
+    db.session.flush() # Получаем ID лотереи до коммита
+
+    movies_to_process = []
     for movie_data in movies_json:
         new_movie = Movie(
             name=movie_data['name'], poster=movie_data.get('poster'), year=movie_data.get('year'),
             description=movie_data.get('description'), rating_kp=movie_data.get('rating_kp'),
-            genres=movie_data.get('genres'), countries=movie_data.get('countries'), lottery=new_lottery
+            genres=movie_data.get('genres'), countries=movie_data.get('countries'), lottery_id=new_lottery.id
         )
         db.session.add(new_movie)
+        db.session.flush() # Получаем ID фильма до коммита
+        movies_to_process.append(new_movie.id)
+
     max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
     for movie_data in movies_json:
         poster = movie_data.get('poster')
@@ -140,7 +189,15 @@ def create_lottery():
             max_z_index += 1
             new_photo = BackgroundPhoto(poster_url=poster, pos_top=random.uniform(5, 65), pos_left=random.uniform(5, 75), rotation=random.randint(-30, 30), z_index=max_z_index)
             db.session.add(new_photo)
+    
     db.session.commit()
+
+    # Запускаем фоновый поиск для КАЖДОГО нового фильма
+    for movie_id in movies_to_process:
+        thread = threading.Thread(target=find_and_cache_torrent_info_task, args=(app.app_context(), movie_id))
+        thread.daemon = True
+        thread.start()
+
     return jsonify({"wait_url": url_for('wait_for_result', lottery_id=lottery_id)})
 
 @app.route('/wait/<lottery_id>')
@@ -161,8 +218,7 @@ def play_lottery(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     result_obj = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
     background_photos = get_background_photos()
-    movies_for_js = [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies]
-    return render_template('play.html', lottery=lottery, result=result_obj, background_photos=background_photos, movies_for_js=json.dumps(movies_for_js))
+    return render_template('play.html', lottery=lottery, result=result_obj, background_photos=background_photos)
 
 @app.route('/draw/<lottery_id>', methods=['POST'])
 def draw_winner(lottery_id):
@@ -180,9 +236,11 @@ def draw_winner(lottery_id):
 def get_result_data(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
+    # ОБНОВЛЕНО: передаем больше данных о торрентах
     movies_data = [{
-        "name": m.name, "poster": m.poster, "year": m.year, "description": m.description,
-        "rating_kp": m.rating_kp, "genres": m.genres, "countries": m.countries
+        "id": m.id, "name": m.name, "poster": m.poster, "year": m.year, "description": m.description,
+        "rating_kp": m.rating_kp, "genres": m.genres, "countries": m.countries,
+        "has_magnet": bool(m.magnet_link), "quality": m.torrent_quality, "seeds": m.torrent_seeds
     } for m in lottery.movies]
     result_data = next((m for m in movies_data if m["name"] == lottery.result_name), None) if lottery.result_name else None
     return jsonify({"movies": movies_data, "result": result_data, "createdAt": lottery.created_at.isoformat() + "Z", "play_url": play_url})
@@ -196,72 +254,63 @@ def delete_lottery(lottery_id):
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
+# --- ОБНОВЛЕННАЯ ЛОГИКА СКАЧИВАНИЯ ---
+@app.route('/api/start-download/<movie_id>', methods=['POST'])
+def start_download(movie_id):
+    movie = Movie.query.get_or_404(movie_id)
 
-# --- ИСПРАВЛЕННАЯ ВЕРСИЯ ЛОГИКИ СКАЧИВАНИЯ ---
-
-def search_and_download_task(app_context, lottery_id, search_query):
-    """Эта функция будет выполняться в фоновом потоке, чтобы не блокировать сервер."""
-    with app_context:
-        print(f"[Фон] Начал поиск для: {search_query}")
-        
-        try:
-            # 1. Формируем улучшенный поисковый запрос
-            quality_keywords = "1080p 2160p лицензия дубляж"
-            full_search_query = f"{search_query} {quality_keywords}"
-            print(f"[Фон] Полный запрос: {full_search_query}")
-
-            # 2. Поиск с помощью torrentp
-            # Создаем экземпляр класса и запускаем поиск
-            downloader = TorrentDownloader(full_search_query)
-            downloader.start_search()
-            
-            # 3. Получаем результат
-            magnet_link = downloader.get_magnet()
-            
-            if not magnet_link:
-                print(f"[Фон] Фильм '{search_query}' не найден через torrentp.")
-                return
-
-            torrent_title = downloader.get_title()
-            print(f"[Фон] Найден лучший торрент: {torrent_title}")
-            print(f"[Фон] Magnet-ссылка: {magnet_link}")
-
-            # 4. Отправляем в qBittorrent
-            print("[Фон] Отправляю magnet-ссылку в qBittorrent.")
-            qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
-            qbt_client.auth_log_in()
-            qbt_client.torrents_add(urls=magnet_link, category=f"lottery-{lottery_id}", is_sequential='true')
-            qbt_client.auth_log_out()
-            print(f"[Фон] Задача для '{search_query}' успешно добавлена в qBittorrent!")
-
-        except Exception as e:
-            print(f"[Фон] Произошла ошибка в фоновой задаче: {e}")
-
-
-@app.route('/api/start-download/<lottery_id>', methods=['POST'])
-def start_download(lottery_id):
-    lottery = Lottery.query.get_or_404(lottery_id)
-    if not lottery.result_name:
-        return jsonify({"success": False, "message": "Лотерея еще не разыграна"}), 400
+    if not movie.magnet_link:
+        return jsonify({"success": False, "message": "Торрент для этого фильма еще не найден. Попробуйте позже."}), 404
 
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        if qbt_client.torrents_info(category=f"lottery-{lottery_id}"):
-            qbt_client.auth_log_out()
-            return jsonify({"success": True, "message": "Загрузка уже активна или завершена"})
+        
+        # Просто добавляем готовый magnet
+        qbt_client.torrents_add(urls=movie.magnet_link, category=f"lottery-{movie.lottery_id}", is_sequential='true')
+        
         qbt_client.auth_log_out()
+        return jsonify({"success": True, "message": f"Загрузка '{movie.name}' началась!"})
     except Exception as e:
-        print(f"Не удалось подключиться к qBittorrent для проверки: {e}")
+        error_message = f"Не удалось подключиться к qBittorrent: {e}"
+        print(error_message)
+        return jsonify({"success": False, "message": error_message}), 500
 
-    # Запускаем долгий поиск в отдельном потоке
-    search_query = f"{lottery.result_name} {lottery.result_year}"
-    thread = threading.Thread(target=search_and_download_task, args=(app.app_context(), lottery_id, search_query))
+
+# --- ЛОГИКА ОБНОВЛЕНИЯ СИДОВ ---
+def update_all_seeders_task(app_context):
+    """
+    Проходит по всем фильмам в БД, которым больше суток, и обновляет инфо о сидах.
+    Эту функцию нужно вызывать по расписанию (например, раз в день).
+    """
+    with app_context:
+        print("[Обновление] Запущена задача обновления сидов.")
+        movies_to_update = Movie.query.filter(
+            Movie.magnet_link.isnot(None),
+            Movie.torrent_info_updated_at < (datetime.utcnow() - timedelta(hours=24))
+        ).all()
+
+        if not movies_to_update:
+            print("[Обновление] Нет фильмов для обновления.")
+            return
+
+        print(f"[Обновление] Найдено {len(movies_to_update)} фильмов для обновления.")
+        for movie in movies_to_update:
+            find_and_cache_torrent_info_task(app.app_context(), movie.id)
+        
+        print("[Обновление] Задача обновления сидов завершена.")
+
+@app.route('/api/trigger-seed-update/<secret_key>')
+def trigger_seed_update(secret_key):
+    # Этот маршрут можно вызывать через cron для автоматического обновления
+    # Для безопасности используется простой секретный ключ
+    if secret_key != "YOUR_SUPER_SECRET_KEY": # Замените на свой ключ
+        return "Unauthorized", 401
+    
+    thread = threading.Thread(target=update_all_seeders_task, args=(app.app_context(),))
     thread.daemon = True
     thread.start()
-
-    # Мгновенно возвращаем ответ пользователю
-    return jsonify({"success": True, "message": "Поиск запущен в фоновом режиме! Загрузка скоро начнется."})
+    return "Задача обновления сидов запущена в фоновом режиме.", 200
 
 
 # --- Маршрут для статуса торрента (без изменений) ---
@@ -289,8 +338,7 @@ def get_torrent_status(lottery_id):
             try: qbt_client.auth_log_out()
             except: pass
 
-
-# --- Служебные маршруты (без изменений) ---
+# --- Служебные маршруты ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
