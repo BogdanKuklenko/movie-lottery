@@ -13,7 +13,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client
-import torrentp # <-- НОВАЯ БИБЛИОТЕКА ДЛЯ ПОИСКА
+from torrentp import TorrentDownloader # <-- ИСПРАВЛЕННЫЙ ИМПОРТ
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -31,9 +31,6 @@ QBIT_HOST = os.environ.get('QBIT_HOST')
 QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
-
-# --- КОНФИГУРАЦИЯ JACKETT УДАЛЕНА ---
-# Больше не используется
 
 # --- Модели Данных (без изменений) ---
 class Lottery(db.Model):
@@ -200,7 +197,7 @@ def delete_lottery(lottery_id):
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
 
-# --- НОВАЯ ВЕРСИЯ ЛОГИКИ СКАЧИВАНИЯ ---
+# --- ИСПРАВЛЕННАЯ ВЕРСИЯ ЛОГИКИ СКАЧИВАНИЯ ---
 
 def search_and_download_task(app_context, lottery_id, search_query):
     """Эта функция будет выполняться в фоновом потоке, чтобы не блокировать сервер."""
@@ -209,25 +206,23 @@ def search_and_download_task(app_context, lottery_id, search_query):
         
         try:
             # 1. Формируем улучшенный поисковый запрос
-            # Добавляем ключевые слова для поиска качественного контента
-            # Вы можете настроить эти слова под свои предпочтения
             quality_keywords = "1080p 2160p лицензия дубляж"
             full_search_query = f"{search_query} {quality_keywords}"
             print(f"[Фон] Полный запрос: {full_search_query}")
 
             # 2. Поиск с помощью torrentp
-            # best=True автоматически выберет лучший торрент по сидам
-            torrentp.search(full_search_query, best=True)
+            # Создаем экземпляр класса и запускаем поиск
+            downloader = TorrentDownloader(full_search_query)
+            downloader.start_search()
             
             # 3. Получаем результат
-            best_torrent = torrentp.parse_result()
-
-            if not best_torrent or not best_torrent[0]['Magnet']:
+            magnet_link = downloader.get_magnet()
+            
+            if not magnet_link:
                 print(f"[Фон] Фильм '{search_query}' не найден через torrentp.")
                 return
 
-            magnet_link = best_torrent[0]['Magnet']
-            torrent_title = best_torrent[0]['Name']
+            torrent_title = downloader.get_title()
             print(f"[Фон] Найден лучший торрент: {torrent_title}")
             print(f"[Фон] Magnet-ссылка: {magnet_link}")
 
@@ -276,7 +271,6 @@ def get_torrent_status(lottery_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        # ИСПРАВЛЕНИЕ: Нужно использовать правильный lottery_id, а не объект lottery
         category = f"lottery-{lottery_id}"
         torrents = qbt_client.torrents_info(category=category)
         if not torrents:
