@@ -1,5 +1,6 @@
 # app.py
 
+import html
 import os
 import json
 import random
@@ -8,6 +9,7 @@ import string
 import requests
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
+from urllib.parse import quote
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
@@ -198,6 +200,7 @@ def delete_lottery(lottery_id):
 
 # --- НОВАЯ УПРОЩЕННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ ПУБЛИЧНЫЙ API ---
 
+
 def _format_eta(eta_seconds):
     if eta_seconds is None or eta_seconds < 0:
         return None
@@ -208,6 +211,7 @@ def _format_eta(eta_seconds):
     return f"{minutes}м"
 
 
+
 def _search_torrenter_api(search_query):
     api_url = f"https://torrenter.org/api/search?q={requests.utils.quote(search_query)}"
     print(f"Отправляю запрос в Torrenter API: {search_query}")
@@ -216,7 +220,7 @@ def _search_torrenter_api(search_query):
     results = response.json()
     normalized = []
     for torrent in results or []:
-        magnet_link = torrent.get('magnet') or torrent.get('magnet_link')
+
         if not magnet_link:
             continue
         try:
@@ -227,6 +231,7 @@ def _search_torrenter_api(search_query):
             "magnet": magnet_link,
             "seeders": seeders,
             "name": torrent.get('name'),
+
         })
     return normalized
 
@@ -250,15 +255,12 @@ def _search_apibay_api(search_query):
         except (TypeError, ValueError):
             seeders = 0
         magnet_name = requests.utils.quote(name, safe='')
-        magnet_link = (
-            f"magnet:?xt=urn:btih:{info_hash}&dn={magnet_name}"
-            "&tr=udp://tracker.openbittorrent.com:6969/announce"
-            "&tr=udp://tracker.opentrackr.org:1337/announce"
-        )
+
         normalized.append({
             "magnet": magnet_link,
             "seeders": seeders,
             "name": name,
+
         })
     return normalized
 
@@ -299,11 +301,7 @@ def start_download(lottery_id):
         search_query = f"{lottery.result_name} {lottery.result_year}".strip()
         results = _search_torrents(search_query)
 
-        if not results:
-            return jsonify({"success": False, "message": "Фильм не найден через доступные API."}), 404
 
-        # 2. Ищем лучший торрент по сидам
-        best_torrent = max(results, key=lambda torrent: torrent.get('seeders', 0))
         magnet_link = best_torrent.get('magnet')
 
         if not magnet_link:

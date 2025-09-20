@@ -61,9 +61,7 @@ def test_start_download_calls_search_helper(monkeypatch, app_module):
         searched_queries.append(query)
         return [
             {
-                "magnet": "magnet:?xt=urn:btih:TEST",
-                "seeders": 50,
-                "name": "Мы, нижеподписавшиеся",
+
             }
         ]
 
@@ -89,9 +87,10 @@ def test_start_download_calls_search_helper(monkeypatch, app_module):
     assert searched_queries == ["Мы, нижеподписавшиеся 1980"]
     assert _FakeDownloadClient.added == [
         {
-            "urls": "magnet:?xt=urn:btih:TEST",
+
             "category": "lottery-movie1",
             "is_sequential": "true",
         }
     ]
     assert _FakeDownloadClient.last_category == "lottery-movie1"
+
