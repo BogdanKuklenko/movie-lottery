@@ -261,7 +261,7 @@ def get_torrent_status(lottery_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        category = f"lottery-{lottery.id}"
+        category = f"lottery-{lottery_id}"
         torrents = qbt_client.torrents_info(category=category)
         if not torrents:
             return jsonify({"status": "not_found"})
