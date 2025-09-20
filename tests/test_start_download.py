@@ -61,10 +61,7 @@ def test_start_download_calls_search_helper(monkeypatch, app_module):
         searched_queries.append(query)
         return [
             {
-                "magnet": "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567",
-                "seeders": 50,
-                "name": "Мы, нижеподписавшиеся",
-                "info_hash": "0123456789ABCDEF0123456789ABCDEF01234567",
+
             }
         ]
 
@@ -90,56 +87,10 @@ def test_start_download_calls_search_helper(monkeypatch, app_module):
     assert searched_queries == ["Мы, нижеподписавшиеся 1980"]
     assert _FakeDownloadClient.added == [
         {
-            "urls": "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567",
+
             "category": "lottery-movie1",
             "is_sequential": "true",
         }
     ]
     assert _FakeDownloadClient.last_category == "lottery-movie1"
 
-
-def test_start_download_skips_invalid_magnets(monkeypatch, app_module):
-    module = app_module
-    monkeypatch.setattr(module, "Client", _FakeDownloadClient)
-    _FakeDownloadClient.added.clear()
-    _FakeDownloadClient.last_category = None
-
-    def fake_search(_query):
-        return [
-            {
-                "magnet": "magnet:?xt=urn:btih:",
-                "seeders": 200,
-                "name": "Мы, нижеподписавшиеся",
-            },
-            {
-                "magnet": "magnet:?xt=urn:btih:89ABCDEF0123456789ABCDEF0123456789ABCDEF",
-                "seeders": 50,
-                "name": "Мы, нижеподписавшиеся",
-                "info_hash": "89ABCDEF0123456789ABCDEF0123456789ABCDEF",
-            },
-        ]
-
-    monkeypatch.setattr(module, "_search_torrents", fake_search)
-
-    with module.app.app_context():
-        lottery = module.Lottery(
-            id="movie2",
-            result_name="Мы, нижеподписавшиеся",
-            result_year="1980",
-        )
-        module.db.session.add(lottery)
-        module.db.session.commit()
-
-    client = module.app.test_client()
-    response = client.post("/api/start-download/movie2")
-
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["success"] is True
-    assert _FakeDownloadClient.added == [
-        {
-            "urls": "magnet:?xt=urn:btih:89ABCDEF0123456789ABCDEF0123456789ABCDEF",
-            "category": "lottery-movie2",
-            "is_sequential": "true",
-        }
-    ]

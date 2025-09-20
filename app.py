@@ -200,12 +200,6 @@ def delete_lottery(lottery_id):
 
 # --- НОВАЯ УПРОЩЕННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ ПУБЛИЧНЫЙ API ---
 
-MAGNET_HASH_RE = re.compile(r"xt=urn:btih:([A-Fa-f0-9]{40}|[A-Za-z2-7]{32})")
-MAGNET_TRACKERS = (
-    "&tr=udp://tracker.openbittorrent.com:6969/announce"
-    "&tr=udp://tracker.opentrackr.org:1337/announce"
-)
-
 
 def _format_eta(eta_seconds):
     if eta_seconds is None or eta_seconds < 0:
@@ -217,33 +211,6 @@ def _format_eta(eta_seconds):
     return f"{minutes}м"
 
 
-def _build_magnet_from_hash(info_hash, name=None):
-    if not info_hash:
-        return None
-    normalized_hash = info_hash.strip()
-    if not normalized_hash:
-        return None
-    if re.fullmatch(r"[A-Fa-f0-9]{40}", normalized_hash):
-        normalized_hash = normalized_hash.upper()
-    elif re.fullmatch(r"[A-Za-z2-7]{32}", normalized_hash):
-        normalized_hash = normalized_hash.upper()
-    else:
-        return None
-    magnet = f"magnet:?xt=urn:btih:{normalized_hash}"
-    if name:
-        magnet += f"&dn={quote(name)}"
-    return magnet + MAGNET_TRACKERS
-
-
-def _ensure_magnet_link(raw_link, *, name=None, info_hash=None):
-    link = html.unescape(raw_link).strip() if raw_link else ""
-    if link and MAGNET_HASH_RE.search(link):
-        return link
-    if info_hash:
-        fallback = _build_magnet_from_hash(info_hash, name=name)
-        if fallback and MAGNET_HASH_RE.search(fallback):
-            return fallback
-    return None
 
 
 def _search_torrenter_api(search_query):
@@ -254,17 +221,7 @@ def _search_torrenter_api(search_query):
     results = response.json()
     normalized = []
     for torrent in results or []:
-        info_hash = (
-            torrent.get('info_hash')
-            or torrent.get('infoHash')
-            or torrent.get('hash')
-            or torrent.get('infoHashV1')
-        )
-        magnet_link = _ensure_magnet_link(
-            torrent.get('magnet') or torrent.get('magnet_link') or torrent.get('download'),
-            name=torrent.get('name'),
-            info_hash=info_hash,
-        )
+
         if not magnet_link:
             continue
         try:
@@ -275,7 +232,7 @@ def _search_torrenter_api(search_query):
             "magnet": magnet_link,
             "seeders": seeders,
             "name": torrent.get('name'),
-            "info_hash": info_hash,
+
         })
     return normalized
 
@@ -299,14 +256,12 @@ def _search_apibay_api(search_query):
         except (TypeError, ValueError):
             seeders = 0
         magnet_name = requests.utils.quote(name, safe='')
-        magnet_link = _build_magnet_from_hash(info_hash, name=name)
-        if not magnet_link:
-            continue
+
         normalized.append({
             "magnet": magnet_link,
             "seeders": seeders,
             "name": name,
-            "info_hash": info_hash,
+
         })
     return normalized
 
@@ -347,38 +302,12 @@ def start_download(lottery_id):
         search_query = f"{lottery.result_name} {lottery.result_year}".strip()
         results = _search_torrents(search_query)
 
-        valid_results = []
-        for torrent in results:
-            magnet_link = _ensure_magnet_link(
-                torrent.get('magnet'),
-                name=torrent.get('name'),
-                info_hash=torrent.get('info_hash'),
-            )
-            if not magnet_link:
-                continue
-            normalized_entry = dict(torrent)
-            normalized_entry['magnet'] = magnet_link
-            valid_results.append(normalized_entry)
-
-        if not valid_results:
-            return jsonify({"success": False, "message": "Фильм не найден через доступные API."}), 404
-
-        # 2. Ищем лучший торрент по сидам
-        best_torrent = None
-        max_seeders = -1
-        for torrent in valid_results:
-            seeders = torrent.get('seeders', 0) or 0
-            if best_torrent is None or seeders > max_seeders:
-                best_torrent = torrent
-                max_seeders = seeders
-
-        if not best_torrent:
-            return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
 
         magnet_link = best_torrent.get('magnet')
 
         if not magnet_link:
             return jsonify({"success": False, "message": "Фильм найден, но не удалось получить magnet-ссылку."}), 404
+
 
         # 3. Отправляем найденную magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
@@ -398,6 +327,15 @@ def start_download(lottery_id):
 
 
 # --- Маршрут для статуса торрента ---
+def _format_eta(eta_seconds):
+    if eta_seconds is None or eta_seconds < 0:
+        return None
+    hours, remainder = divmod(int(eta_seconds), 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
