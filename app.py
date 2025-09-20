@@ -6,7 +6,7 @@ import random
 import re
 import string
 import requests
-import xml.etree.ElementTree as ET # <-- НУЖНО для чтения ответа от Jackett
+import xml.etree.ElementTree as ET
 from flask import Flask, render_template, request, jsonify, url_for
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -25,19 +25,18 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- Конфигурация qBittorrent (без изменений) ---
+# --- Конфигурация qBittorrent ---
 QBIT_HOST = os.environ.get('QBIT_HOST')
 QBIT_PORT = os.environ.get('QBIT_PORT')
 QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
-# --- НОВАЯ КОНФИГУРАЦИЯ ДЛЯ JACKETT ---
-# Данные, которые вы предоставили
+# --- КОНФИГУРАЦИЯ JACKETT ---
 JACKETT_API_KEY = "s2dvja7ksbthmfo75g2lwznmcc0exsbh"
 JACKETT_TORZNAB_URL = "https://jackett-service-orwx.onrender.com/api/v2.0/indexers/rutracker/results/torznab/"
 
 
-# --- Модели Данных (без изменений) ---
+# --- Модели Данных ---
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -66,7 +65,7 @@ class BackgroundPhoto(db.Model):
     z_index = db.Column(db.Integer, nullable=False)
     added_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
-# --- Вспомогательные функции (без изменений) ---
+# --- Вспомогательные функции ---
 def get_movie_data_from_kinopoisk(query):
     headers = {"X-API-KEY": os.environ.get('KINOPOISK_API_TOKEN')}
     params = {}
@@ -109,7 +108,7 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
-# --- Маршруты (без изменений) ---
+# --- Маршруты ---
 @app.route('/')
 def index():
     background_photos = get_background_photos()
@@ -202,7 +201,7 @@ def delete_lottery(lottery_id):
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
 
-# --- ПОЛНОСТЬЮ ПЕРЕПИСАННАЯ ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ JACKETT ---
+# --- ЛОГИКА СКАЧИВАНИЯ ЧЕРЕЗ JACKETT ---
 
 @app.route('/api/start-download/<lottery_id>', methods=['POST'])
 def start_download(lottery_id):
@@ -228,27 +227,35 @@ def start_download(lottery_id):
 
         # 2. Ищем лучший торрент в ответе от Jackett
         root = ET.fromstring(response.content)
-        best_torrent = None
+        best_torrent_link = None
         max_seeders = -1
 
         for item in root.findall('.//item'):
-            # Ищем элемент с атрибутом seeders
             seeders_element = item.find(".//torznab:attr[@name='seeders']", namespaces={'torznab': 'http://torznab.com/schemas/2012/xmlns'})
             if seeders_element is not None:
                 seeders = int(seeders_element.get('value'))
                 if seeders > max_seeders:
                     max_seeders = seeders
-                    # Magnet-ссылка обычно находится в элементе enclosure
-                    enclosure = item.find('enclosure')
-                    if enclosure is not None:
-                        best_torrent = enclosure.get('url')
+                    
+                    # --- ИСПРАВЛЕНИЕ: Ищем ссылку в двух местах ---
+                    # Сначала ищем magnet-ссылку в <link>
+                    link_tag = item.find('link')
+                    if link_tag is not None and link_tag.text and link_tag.text.startswith('magnet:'):
+                        best_torrent_link = link_tag.text
+                    else:
+                        # Если не нашли, ищем в <enclosure>
+                        enclosure_tag = item.find('enclosure')
+                        if enclosure_tag is not None and enclosure_tag.get('url', '').startswith('magnet:'):
+                            best_torrent_link = enclosure_tag.get('url')
+                    # -------------------------------------------------
 
-        if not best_torrent:
+        if not best_torrent_link:
+            # Эта строка кода возвращает ошибку, которую вы видели
             return jsonify({"success": False, "message": "Фильм найден, но не удалось найти magnet-ссылку."}), 404
 
         # 3. Отправляем найденную magnet-ссылку в qBittorrent
         print(f"Найдена лучшая ссылка с {max_seeders} сидами. Отправляю в qBittorrent.")
-        qbt_client.torrents_add(urls=best_torrent, category=category, is_sequential='true')
+        qbt_client.torrents_add(urls=best_torrent_link, category=category, is_sequential='true')
         return jsonify({"success": True, "message": f"Загрузка '{lottery.result_name}' началась!"})
 
     except Exception as e:
@@ -260,7 +267,7 @@ def start_download(lottery_id):
             try: qbt_client.auth_log_out()
             except: pass
 
-# --- Маршрут для статуса торрента (без изменений) ---
+# --- Маршрут для статуса торрента ---
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
@@ -286,7 +293,7 @@ def get_torrent_status(lottery_id):
             except: pass
 
 
-# --- Служебные маршруты (без изменений) ---
+# --- Служебные маршруты ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
     with app.app_context():
