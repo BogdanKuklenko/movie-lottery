@@ -255,6 +255,16 @@ def start_download(lottery_id):
 
 
 # --- Маршрут для статуса торрента ---
+def _format_eta(eta_seconds):
+    if eta_seconds is None or eta_seconds < 0:
+        return None
+    hours, remainder = divmod(int(eta_seconds), 3600)
+    minutes = remainder // 60
+    if hours:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
+
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
     qbt_client = None
@@ -265,19 +275,28 @@ def get_torrent_status(lottery_id):
         torrents = qbt_client.torrents_info(category=category)
         if not torrents:
             return jsonify({"status": "not_found"})
+
         torrent = torrents[0]
+        progress_percent = round(torrent.progress * 100, 1) if torrent.progress is not None else 0.0
+        download_speed_mbps = round(torrent.dlspeed / 1024 / 1024, 2) if torrent.dlspeed is not None else 0.0
+        eta_display = _format_eta(torrent.eta)
+
         status_info = {
-            "status": torrent.state, "progress": f"{torrent.progress * 100:.1f}",
-            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}",
-            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м", "name": torrent.name
+            "status": torrent.state,
+            "progress": progress_percent,
+            "speed_mbps": download_speed_mbps,
+            "eta": eta_display,
+            "name": torrent.name,
         }
         return jsonify(status_info)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
     finally:
         if qbt_client:
-            try: qbt_client.auth_log_out()
-            except: pass
+            try:
+                qbt_client.auth_log_out()
+            except Exception:
+                pass
 
 
 # --- Служебные маршруты ---
