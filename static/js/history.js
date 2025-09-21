@@ -20,6 +20,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const pollIntervals = new Map();
     const activeDownloads = new Map();
 
+    const ICON_SVG = {
+        download: '
+            <svg class="icon-svg icon-download" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                <use href="#icon-download"></use>
+            </svg>
+        ',
+        search: '
+            <svg class="icon-svg icon-search" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                <use href="#icon-search"></use>
+            </svg>
+        ',
+        delete: '
+            <svg class="icon-svg icon-delete" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                <use href="#icon-delete"></use>
+            </svg>
+        ',
+    };
+
+    const DOWNLOAD_BUTTON_HTML = `
+        <button type="button" class="icon-button download-button" title="Скачать фильм" aria-label="Скачать фильм">
+            ${ICON_SVG.download}
+        </button>
+    `;
+
+    const SEARCH_BUTTON_HTML = `
+        <button type="button" class="icon-button search-button" title="Искать торрент" aria-label="Искать торрент">
+            ${ICON_SVG.search}
+        </button>
+    `;
+
+    const DELETE_BUTTON_HTML = `
+        <button type="button" class="icon-button delete-button" title="Удалить лотерею" aria-label="Удалить лотерею">
+            ${ICON_SVG.delete}
+        </button>
+    `;
+
     const getDownloadKey = (lotteryId, kinopoiskId) => {
         if (kinopoiskId) {
             return `kp-${kinopoiskId}`;
@@ -435,29 +471,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (winner && winner.has_magnet) {
             if (existingSearchBtn) {
                 const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'action-button download-button';
+                downloadBtn.type = 'button';
+                downloadBtn.className = 'icon-button download-button';
                 downloadBtn.title = 'Скачать фильм';
-                downloadBtn.innerHTML = '&#x2913;';
+                downloadBtn.setAttribute('aria-label', 'Скачать фильм');
+                downloadBtn.innerHTML = ICON_SVG.download;
                 buttons.replaceChild(downloadBtn, existingSearchBtn);
             } else if (!existingDownloadBtn) {
                 const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'action-button download-button';
+                downloadBtn.type = 'button';
+                downloadBtn.className = 'icon-button download-button';
                 downloadBtn.title = 'Скачать фильм';
-                downloadBtn.innerHTML = '&#x2913;';
+                downloadBtn.setAttribute('aria-label', 'Скачать фильм');
+                downloadBtn.innerHTML = ICON_SVG.download;
                 buttons.insertBefore(downloadBtn, buttons.firstChild);
             }
         } else {
             if (existingDownloadBtn) {
                 const searchBtn = document.createElement('button');
-                searchBtn.className = 'action-button search-button';
+                searchBtn.type = 'button';
+                searchBtn.className = 'icon-button search-button';
                 searchBtn.title = 'Искать торрент';
-                searchBtn.innerHTML = '&#x1F50D;';
+                searchBtn.setAttribute('aria-label', 'Искать торрент');
+                searchBtn.innerHTML = ICON_SVG.search;
                 buttons.replaceChild(searchBtn, existingDownloadBtn);
             } else if (!existingSearchBtn) {
                 const searchBtn = document.createElement('button');
-                searchBtn.className = 'action-button search-button';
+                searchBtn.type = 'button';
+                searchBtn.className = 'icon-button search-button';
                 searchBtn.title = 'Искать торрент';
-                searchBtn.innerHTML = '&#x1F50D;';
+                searchBtn.setAttribute('aria-label', 'Искать торрент');
+                searchBtn.innerHTML = ICON_SVG.search;
                 buttons.insertBefore(searchBtn, buttons.firstChild);
             }
         }
@@ -503,21 +547,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showToast(error.message, 'error');
         }
-    };
-
-    const buildLibraryPayloadFromCard = (card) => {
-        if (!card) return null;
-        return {
-            lottery_id: card.dataset.lotteryId || null,
-            kinopoisk_id: card.dataset.kinopoiskId || null,
-            name: card.dataset.movieName || '',
-            year: card.dataset.movieYear || '',
-            poster: card.dataset.moviePoster || '',
-            description: card.dataset.movieDescription || '',
-            rating_kp: card.dataset.movieRating || '',
-            genres: card.dataset.movieGenres || '',
-            countries: card.dataset.movieCountries || '',
-        };
     };
 
     const renderParticipantsList = (movies, winnerName) => {
@@ -794,15 +823,12 @@ document.addEventListener('DOMContentLoaded', () => {
         item.dataset.movieGenres = winner.genres || '';
         item.dataset.movieCountries = winner.countries || '';
 
-        const actionButtonHtml = winner.has_magnet
-            ? '<button class="action-button download-button" title="Скачать фильм">&#x2913;</button>'
-            : '<button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>';
+        const actionButtonHtml = winner.has_magnet ? DOWNLOAD_BUTTON_HTML : SEARCH_BUTTON_HTML;
 
         item.innerHTML = `
             <div class="action-buttons">
                 ${actionButtonHtml}
-                <button class="action-button library-button" title="Добавить в библиотеку">&#128218;</button>
-                <button class="action-button-delete delete-button" title="Удалить лотерею">&times;</button>
+                ${DELETE_BUTTON_HTML}
             </div>
             <div class="date-badge" data-date="${escapeAttr(createdAtIso)}"></div>
             <img src="${escapeAttr(winner.poster || placeholderPoster)}" alt="${escapeHtml(winner.name)}">
@@ -840,33 +866,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!galleryItem) return;
 
             const { lotteryId, kinopoiskId, movieName, movieYear } = galleryItem.dataset;
-            const isDownloadButton = event.target.classList.contains('download-button');
-            const isSearchButton = event.target.classList.contains('search-button');
-            const isDeleteButton = event.target.classList.contains('delete-button');
-            const isLibraryButton = event.target.classList.contains('library-button');
-
-            if (isDownloadButton) {
+            const actionButton = event.target.closest('button');
+            if (actionButton && galleryItem.contains(actionButton)) {
                 event.stopPropagation();
-                handleDownloadClick(kinopoiskId, movieName, lotteryId);
-                return;
-            }
 
-            if (isSearchButton) {
-                event.stopPropagation();
-                handleSearchClick(movieName, movieYear);
-                return;
-            }
+                if (actionButton.classList.contains('download-button')) {
+                    handleDownloadClick(kinopoiskId, movieName, lotteryId);
+                    return;
+                }
 
-            if (isDeleteButton) {
-                event.stopPropagation();
-                handleDeleteLottery(lotteryId, galleryItem);
-                return;
-            }
+                if (actionButton.classList.contains('search-button')) {
+                    handleSearchClick(movieName, movieYear);
+                    return;
+                }
 
-            if (isLibraryButton) {
-                event.stopPropagation();
-                addMovieToLibrary(buildLibraryPayloadFromCard(galleryItem));
-                return;
+                if (actionButton.classList.contains('delete-button')) {
+                    handleDeleteLottery(lotteryId, galleryItem);
+                    return;
+                }
             }
 
             openModal(lotteryId);

@@ -465,15 +465,26 @@ document.addEventListener('DOMContentLoaded', () => {
         card.dataset.hasMagnet = normalized ? 'true' : 'false';
         card.dataset.magnetLink = magnetLink || '';
         const downloadBtn = card.querySelector('.download-button');
+        const searchBtn = card.querySelector('.search-button');
         const kinopoiskId = card.dataset.kinopoiskId;
+        const shouldShowDownload = normalized;
         if (downloadBtn) {
-            const canDownload = normalized && Boolean(kinopoiskId);
+            const canDownload = shouldShowDownload && Boolean(kinopoiskId);
+            downloadBtn.hidden = !shouldShowDownload;
             if (canDownload) {
                 downloadBtn.removeAttribute('disabled');
                 downloadBtn.title = 'Скачать торрент';
-            } else {
+            } else if (shouldShowDownload) {
                 downloadBtn.setAttribute('disabled', 'disabled');
-                downloadBtn.title = kinopoiskId ? 'Добавьте magnet-ссылку, чтобы скачать' : 'kinopoisk_id не указан';
+                downloadBtn.title = kinopoiskId ? 'Добавьте magnet-ссылку, чтобы скачать' : 'Для этого фильма не указан kinopoisk_id';
+            } else {
+                downloadBtn.removeAttribute('disabled');
+            }
+        }
+        if (searchBtn) {
+            searchBtn.hidden = shouldShowDownload;
+            if (!shouldShowDownload) {
+                searchBtn.title = 'Искать торрент';
             }
         }
     };
@@ -652,22 +663,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = event.target.closest('.gallery-item');
             if (!card) return;
 
-            if (event.target.classList.contains('download-button')) {
-                event.stopPropagation();
-                handleDownload(card);
-                return;
-            }
+            const actionButton = event.target.closest('button');
+            if (actionButton && card.contains(actionButton)) {
+                if (actionButton.disabled) {
+                    event.stopPropagation();
+                    return;
+                }
 
-            if (event.target.classList.contains('search-button')) {
-                event.stopPropagation();
-                handleSearch(card.dataset.movieName, card.dataset.movieYear);
-                return;
-            }
+                if (actionButton.classList.contains('download-button')) {
+                    event.stopPropagation();
+                    handleDownload(card);
+                    return;
+                }
 
-            if (event.target.classList.contains('delete-button')) {
-                event.stopPropagation();
-                handleDelete(card);
-                return;
+                if (actionButton.classList.contains('search-button')) {
+                    event.stopPropagation();
+                    handleSearch(card.dataset.movieName, card.dataset.movieYear);
+                    return;
+                }
+
+                if (actionButton.classList.contains('delete-button')) {
+                    event.stopPropagation();
+                    handleDelete(card);
+                    return;
+                }
             }
 
             renderModal(card);
