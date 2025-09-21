@@ -228,9 +228,14 @@ def history():
 @app.route('/library')
 def library():
     library_movies = LibraryMovie.query.order_by(LibraryMovie.added_at.desc()).all()
+    identifiers = {}
+    for movie in library_movies:
+        if movie.kinopoisk_id and movie.kinopoisk_id not in identifiers:
+            identifiers[movie.kinopoisk_id] = MovieIdentifier.query.get(movie.kinopoisk_id)
     return render_template(
         'library.html',
         library_movies=library_movies,
+        identifiers=identifiers,
         background_photos=get_background_photos()
     )
 
@@ -438,7 +443,16 @@ def save_movie_magnet():
 def start_download(kinopoisk_id):
     identifier = MovieIdentifier.query.get_or_404(kinopoisk_id)
     movie_in_lottery = Movie.query.filter_by(kinopoisk_id=kinopoisk_id).order_by(Movie.id.desc()).first()
-    category = f"lottery-{movie_in_lottery.lottery_id}" if movie_in_lottery else "lottery-default"
+    source = request.args.get('source')
+
+    if source == 'library' and kinopoisk_id:
+        category = f"library-{kinopoisk_id}"
+    elif movie_in_lottery:
+        category = f"lottery-{movie_in_lottery.lottery_id}"
+    elif kinopoisk_id:
+        category = f"library-{kinopoisk_id}"
+    else:
+        category = "lottery-default"
 
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
@@ -450,28 +464,43 @@ def start_download(kinopoisk_id):
             is_first_last_piece_priority=True,
         )
         qbt_client.auth_log_out()
-        return jsonify({"success": True, "message": "Загрузка началась!"})
+        return jsonify({"success": True, "message": "Загрузка началась!", "category": category})
     except Exception as e:
         return jsonify({"success": False, "message": f"Ошибка qBittorrent: {e}"}), 500
 
 # --- ОБНОВЛЕННЫЙ СТАТУС ТОРРЕНТА ---
-@app.route('/api/torrent-status/<lottery_id>')
-def get_torrent_status(lottery_id):
+@app.route('/api/torrent-status/<path:resource_id>')
+def get_torrent_status(resource_id):
     qbt_client = None
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        torrents = qbt_client.torrents_info(category=f"lottery-{lottery_id}")
+        if resource_id.startswith(('lottery-', 'library-')):
+            category = resource_id
+        else:
+            category = f"lottery-{resource_id}"
+
+        torrents = qbt_client.torrents_info(category=category)
         if not torrents:
             return jsonify({"status": "not_found"})
-        
+
         torrent = torrents[0]
+        progress_value = torrent.progress * 100 if hasattr(torrent, 'progress') else 0
+        download_speed = torrent.dlspeed / 1024 / 1024 if hasattr(torrent, 'dlspeed') else 0
+        eta_value = getattr(torrent, 'eta', None)
+        if eta_value is None or eta_value < 0:
+            eta_text = "--:--"
+        else:
+            eta_text = f"{eta_value // 3600}ч {(eta_value % 3600) // 60}м"
         return jsonify({
-            "status": torrent.state, "progress": f"{torrent.progress * 100:.1f}",
-            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}", "name": torrent.name,
-            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м",
-            "seeds": torrent.num_seeds, # <-- НОВОЕ ПОЛЕ
-            "peers": torrent.num_leechs # <-- НОВОЕ ПОЛЕ
+            "status": getattr(torrent, 'state', ''),
+            "progress": f"{progress_value:.1f}",
+            "speed": f"{download_speed:.2f}",
+            "name": getattr(torrent, 'name', ''),
+            "eta": eta_text,
+            "seeds": getattr(torrent, 'num_seeds', 0),
+            "peers": getattr(torrent, 'num_leechs', 0),
+            "category": category,
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})

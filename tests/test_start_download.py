@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 
 
-class _BaseFakeClient:
+class _FakeDownloadClient:
     last_category = None
+    added = []
+    logged_out = False
 
     def __init__(self, *args, **kwargs):
         pass
@@ -15,14 +17,7 @@ class _BaseFakeClient:
         return None
 
     def auth_log_out(self):
-        _BaseFakeClient.logged_out = True
-
-
-_BaseFakeClient.logged_out = False
-
-
-class _FakeDownloadClient(_BaseFakeClient):
-    added = []
+        _FakeDownloadClient.logged_out = True
 
     def torrents_info(self, category=None):
         _FakeDownloadClient.last_category = category
@@ -57,50 +52,72 @@ def app_module(monkeypatch):
     with module.app.app_context():
         module.db.drop_all()
         module.db.create_all()
-    yield module
-
-
-def test_start_download_calls_search_helper(monkeypatch, app_module):
-    module = app_module
     monkeypatch.setattr(module, "Client", _FakeDownloadClient)
+    return module
+
+
+def _prepare_lottery_movie(module, kinopoisk_id=321):
+    with module.app.app_context():
+        lottery = module.Lottery(id="lot001", result_name="Test Movie", result_year="2024")
+        module.db.session.add(lottery)
+        movie = module.Movie(
+            kinopoisk_id=kinopoisk_id,
+            name="Test Movie",
+            poster=None,
+            year="2024",
+            lottery_id=lottery.id,
+        )
+        identifier = module.MovieIdentifier(kinopoisk_id=kinopoisk_id, magnet_link="magnet:?xt=test")
+        module.db.session.add(movie)
+        module.db.session.add(identifier)
+        module.db.session.commit()
+        lottery_id = lottery.id
+    return kinopoisk_id, lottery_id
+
+
+def test_start_download_uses_lottery_category_when_movie_exists(app_module, monkeypatch):
+    module = app_module
     _FakeDownloadClient.added.clear()
     _FakeDownloadClient.last_category = None
+    _FakeDownloadClient.logged_out = False
 
-    searched_queries = []
-
-    def fake_search(query):
-        searched_queries.append(query)
-        return [
-            {
-
-            }
-        ]
-
-    monkeypatch.setattr(module, "_search_torrents", fake_search)
-
-    with module.app.app_context():
-        lottery = module.Lottery(
-            id="movie1",
-            result_name="Мы, нижеподписавшиеся",
-            result_year="1980",
-        )
-        module.db.session.add(lottery)
-        module.db.session.commit()
+    kinopoisk_id, lottery_id = _prepare_lottery_movie(module)
 
     client = module.app.test_client()
-    response = client.post("/api/start-download/movie1")
+    response = client.post(f"/api/start-download/{kinopoisk_id}")
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["success"] is True
-    assert "началась" in payload["message"]
-
-    assert searched_queries == ["Мы, нижеподписавшиеся 1980"]
+    assert payload["category"] == f"lottery-{lottery_id}"
     assert len(_FakeDownloadClient.added) == 1
     added_entry = _FakeDownloadClient.added[0]
-    assert added_entry["category"] == "lottery-movie1"
+    assert added_entry["urls"] == "magnet:?xt=test"
+    assert added_entry["category"] == f"lottery-{lottery_id}"
     assert added_entry["is_sequential_download"] is True
     assert added_entry["is_first_last_piece_priority"] is True
-    assert _FakeDownloadClient.last_category == "lottery-movie1"
+    assert _FakeDownloadClient.logged_out is True
 
 
+def test_start_download_uses_library_category_when_requested(app_module):
+    module = app_module
+    _FakeDownloadClient.added.clear()
+    _FakeDownloadClient.last_category = None
+    _FakeDownloadClient.logged_out = False
+
+    kinopoisk_id = 555
+    with module.app.app_context():
+        identifier = module.MovieIdentifier(kinopoisk_id=kinopoisk_id, magnet_link="magnet:?xt=library")
+        module.db.session.add(identifier)
+        module.db.session.commit()
+
+    client = module.app.test_client()
+    response = client.post(f"/api/start-download/{kinopoisk_id}?source=library")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert payload["category"] == f"library-{kinopoisk_id}"
+    assert len(_FakeDownloadClient.added) == 1
+    added_entry = _FakeDownloadClient.added[0]
+    assert added_entry["category"] == f"library-{kinopoisk_id}"

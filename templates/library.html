@@ -20,14 +20,58 @@
         </div>
     </header>
 
-
+    <div class="history-gallery library-gallery">
+        {% if library_movies %}
+            {% for movie in library_movies %}
+                {% set identifier = identifiers.get(movie.kinopoisk_id) if movie.kinopoisk_id else None %}
+                <div
+                    class="gallery-item library-card"
+                    data-movie-id="{{ movie.id }}"
+                    data-kinopoisk-id="{{ movie.kinopoisk_id or '' }}"
+                    data-movie-name="{{ movie.name|e }}"
+                    data-movie-year="{{ movie.year or '' }}"
+                    data-movie-poster="{{ (movie.poster or '')|e }}"
+                    data-movie-description="{{ (movie.description|default('', true)|replace('\n', ' '))|e }}"
+                    data-movie-rating="{{ '%.1f'|format(movie.rating_kp) if movie.rating_kp is not none else '' }}"
+                    data-movie-genres="{{ (movie.genres|default('', true))|e }}"
+                    data-movie-countries="{{ (movie.countries|default('', true))|e }}"
+                    data-added-at="{{ movie.added_at.isoformat() }}"
+                    data-has-magnet="{{ 'true' if identifier and identifier.magnet_link else 'false' }}"
+                    data-magnet-link="{{ identifier.magnet_link if identifier and identifier.magnet_link else '' }}"
+                >
+                    <div class="action-buttons">
+                        {% if identifier and identifier.magnet_link %}
+                            <button class="action-button download-button" title="Скачать торрент">&#x2913;</button>
+                        {% endif %}
+                        <button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>
+                        <button class="action-button-delete delete-button" title="Удалить из библиотеки">&times;</button>
+                    </div>
+                    <img src="{{ movie.poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ movie.name|e }}">
+                    <div class="date-badge" data-date="{{ movie.added_at.isoformat() }}"></div>
                 </div>
             {% endfor %}
-        {% else %}
-            <p class="no-history">В библиотеке пока нет фильмов.</p>
         {% endif %}
     </div>
 
+    <p class="no-history library-empty-message"{% if library_movies %} style="display: none;"{% endif %}>В библиотеке пока нет фильмов.</p>
+
+    <div id="torrent-status-widget" class="status-widget" style="display: none;">
+        <div class="widget-header">
+            <h4>Статус загрузки</h4>
+            <button id="widget-toggle-btn" class="widget-toggle-btn">&mdash;</button>
+        </div>
+        <div id="widget-body" class="widget-body">
+            <p class="widget-empty">Активных загрузок нет.</p>
+            <div id="widget-downloads"></div>
+        </div>
+    </div>
+
+    <div id="library-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <div id="library-modal-body"></div>
+        </div>
+    </div>
 
     <script src="{{ url_for('static', filename='js/library.js') }}"></script>
     <script>
