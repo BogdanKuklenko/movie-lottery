@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error(error);
-            alert(error.message);
+            showToast(error.message, 'error');
             drawButton.disabled = false;
             drawButton.textContent = 'Узнать свою судьбу!';
         }

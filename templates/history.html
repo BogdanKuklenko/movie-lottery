@@ -95,6 +95,7 @@
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
     <script src="{{ url_for('static', filename='js/history.js') }}"></script>
     <script>
         var backgroundPhotos = {{ background_photos|tojson|safe }};

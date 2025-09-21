@@ -452,6 +452,7 @@ def start_download(kinopoisk_id):
             category=category,
             is_sequential_download=True,
             is_first_last_piece_priority=True,
+            tags=f"kp-{kinopoisk_id}",
         )
         qbt_client.auth_log_out()
         return jsonify({"success": True, "message": "Загрузка началась!"})
@@ -479,6 +480,7 @@ def start_library_download(movie_id):
             category=category,
             is_sequential_download=True,
             is_first_last_piece_priority=True,
+            tags=f"kp-{library_movie.kinopoisk_id}",
         )
         qbt_client.auth_log_out()
         return jsonify({"success": True, "message": "Загрузка началась!"})
@@ -511,6 +513,90 @@ def get_torrent_status(lottery_id):
         if qbt_client:
             try: qbt_client.auth_log_out()
             except: pass
+
+
+def _extract_kinopoisk_id(tags_value):
+    if not tags_value:
+        return None
+    tags = [tag.strip() for tag in str(tags_value).split(',') if tag.strip()]
+    for tag in tags:
+        if tag.startswith('kp-'):
+            try:
+                return int(tag.split('-', 1)[1])
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def _format_eta(seconds):
+    if seconds is None or seconds < 0:
+        return '--:--'
+    hours = int(seconds) // 3600
+    minutes = (int(seconds) % 3600) // 60
+    return f"{hours}ч {minutes}м"
+
+
+def _format_torrent_status(torrent):
+    return {
+        "status": torrent.state,
+        "progress": f"{torrent.progress * 100:.1f}",
+        "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}",
+        "name": torrent.name,
+        "eta": _format_eta(torrent.eta),
+        "seeds": torrent.num_seeds,
+        "peers": torrent.num_leechs,
+        "category": getattr(torrent, 'category', ''),
+    }
+
+
+@app.route('/api/download-status/<int:kinopoisk_id>')
+def get_download_status_by_kinopoisk(kinopoisk_id):
+    qbt_client = None
+    try:
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+        qbt_client.auth_log_in()
+        torrents = qbt_client.torrents_info(tag=f"kp-{kinopoisk_id}")
+        if not torrents:
+            return jsonify({"status": "not_found"})
+
+        torrent = max(torrents, key=lambda t: getattr(t, 'progress', 0))
+        payload = _format_torrent_status(torrent)
+        payload["kinopoisk_id"] = kinopoisk_id
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+    finally:
+        if qbt_client:
+            try:
+                qbt_client.auth_log_out()
+            except Exception:
+                pass
+
+
+@app.route('/api/active-downloads')
+def list_active_downloads():
+    qbt_client = None
+    try:
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+        qbt_client.auth_log_in()
+        torrents = qbt_client.torrents_info()
+        downloads = []
+        for torrent in torrents:
+            kinopoisk_id = _extract_kinopoisk_id(getattr(torrent, 'tags', ''))
+            if not kinopoisk_id:
+                continue
+            payload = _format_torrent_status(torrent)
+            payload["kinopoisk_id"] = kinopoisk_id
+            downloads.append(payload)
+        return jsonify({"downloads": downloads})
+    except Exception as e:
+        return jsonify({"downloads": [], "status": "error", "message": str(e)})
+    finally:
+        if qbt_client:
+            try:
+                qbt_client.auth_log_out()
+            except Exception:
+                pass
 
 
 @app.route('/api/library/torrent-status/<int:movie_id>')
