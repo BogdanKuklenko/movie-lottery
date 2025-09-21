@@ -20,6 +20,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const pollIntervals = new Map();
     const activeDownloads = new Map();
 
+    const getDownloadKey = (lotteryId, kinopoiskId) => {
+        if (kinopoiskId) {
+            return `kp-${kinopoiskId}`;
+        }
+        if (lotteryId) {
+            return `lottery-${lotteryId}`;
+        }
+        return null;
+    };
+
+    const normalizeId = (value) => (value === null || value === undefined ? '' : String(value));
+
     let currentModalLotteryId = null;
 
     const escapeHtml = (value) => {
@@ -55,7 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!widget) return;
         try {
             const payload = Array.from(activeDownloads.values()).map((entry) => ({
-                lotteryId: entry.lotteryId,
+                key: entry.key,
+                lotteryId: entry.lotteryId || null,
                 movieName: entry.movieName,
                 kinopoiskId: entry.kinopoiskId || null,
             }));
@@ -71,7 +84,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const raw = localStorage.getItem(ACTIVE_DOWNLOADS_KEY);
             if (!raw) return [];
             const parsed = safeJsonParse(raw);
-            return Array.isArray(parsed) ? parsed : [];
+            if (!Array.isArray(parsed)) return [];
+            return parsed.map((entry) => ({
+                key: entry.key || getDownloadKey(entry.lotteryId, entry.kinopoiskId),
+                lotteryId: entry.lotteryId != null ? String(entry.lotteryId) : '',
+                movieName: entry.movieName,
+                kinopoiskId: entry.kinopoiskId != null ? String(entry.kinopoiskId) : '',
+            }));
         } catch (error) {
             console.warn('Не удалось восстановить активные загрузки:', error);
             localStorage.removeItem(ACTIVE_DOWNLOADS_KEY);
@@ -94,13 +113,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const getOrCreateDownloadElement = (lotteryId) => {
+    const getOrCreateDownloadElement = (lotteryId, kinopoiskId) => {
         if (!widgetDownloadsContainer) return null;
-        let item = widgetDownloadsContainer.querySelector(`[data-lottery-id="${lotteryId}"]`);
+        const key = getDownloadKey(lotteryId, kinopoiskId);
+        if (!key) return null;
+        let item = widgetDownloadsContainer.querySelector(`[data-download-key="${key}"]`);
         if (!item) {
             item = document.createElement('div');
             item.className = 'widget-download';
-            item.dataset.lotteryId = lotteryId;
+            item.dataset.downloadKey = key;
+            item.dataset.lotteryId = normalizeId(lotteryId);
+            item.dataset.kinopoiskId = normalizeId(kinopoiskId);
             item.innerHTML = `
                 <h5 class="widget-download-title"></h5>
                 <div class="progress-bar-container">
@@ -121,17 +144,22 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const registerDownload = (lotteryId, movieName, kinopoiskId, { skipSave = false } = {}) => {
-        if (!widget || !lotteryId) return null;
-        const existing = activeDownloads.get(lotteryId) || {};
+        const key = getDownloadKey(lotteryId, kinopoiskId);
+        if (!widget || !key) return null;
+        const existing = activeDownloads.get(key) || {};
         const updated = {
-            lotteryId,
+            ...existing,
+            key,
+            lotteryId: lotteryId != null ? String(lotteryId) : existing.lotteryId || '',
             movieName: movieName || existing.movieName || 'Загрузка...',
-            kinopoiskId: kinopoiskId || existing.kinopoiskId || null,
+            kinopoiskId: kinopoiskId != null ? String(kinopoiskId) : existing.kinopoiskId || '',
         };
-        activeDownloads.set(lotteryId, updated);
+        activeDownloads.set(key, updated);
 
-        const element = getOrCreateDownloadElement(lotteryId);
+        const element = getOrCreateDownloadElement(updated.lotteryId, updated.kinopoiskId);
         if (element) {
+            element.dataset.lotteryId = normalizeId(updated.lotteryId);
+            element.dataset.kinopoiskId = normalizeId(updated.kinopoiskId);
             const title = element.querySelector('.widget-download-title');
             if (title) {
                 title.textContent = `Загрузка: ${updated.movieName}`;
@@ -143,17 +171,35 @@ document.addEventListener('DOMContentLoaded', () => {
         return updated;
     };
 
-    const removeDownload = (lotteryId) => {
-        if (pollIntervals.has(lotteryId)) {
-            clearInterval(pollIntervals.get(lotteryId));
-            pollIntervals.delete(lotteryId);
+    const resolveDownloadKey = (lotteryId, kinopoiskId) => {
+        let key = getDownloadKey(lotteryId, kinopoiskId);
+        if (key && activeDownloads.has(key)) {
+            return key;
         }
-        if (activeDownloads.has(lotteryId)) {
-            activeDownloads.delete(lotteryId);
+        if (lotteryId != null) {
+            const searchId = String(lotteryId);
+            for (const entry of activeDownloads.values()) {
+                if (entry.lotteryId === searchId) {
+                    return entry.key;
+                }
+            }
+        }
+        return null;
+    };
+
+    const removeDownload = (lotteryId, kinopoiskId) => {
+        const key = resolveDownloadKey(lotteryId, kinopoiskId);
+        if (!key) return;
+        if (pollIntervals.has(key)) {
+            clearInterval(pollIntervals.get(key));
+            pollIntervals.delete(key);
+        }
+        if (activeDownloads.has(key)) {
+            activeDownloads.delete(key);
             saveActiveDownloads();
         }
         if (widgetDownloadsContainer) {
-            const element = widgetDownloadsContainer.querySelector(`[data-lottery-id="${lotteryId}"]`);
+            const element = widgetDownloadsContainer.querySelector(`[data-download-key="${key}"]`);
             if (element) {
                 element.remove();
             }
@@ -161,9 +207,11 @@ document.addEventListener('DOMContentLoaded', () => {
         ensureWidgetState();
     };
 
-    const updateDownloadView = (lotteryId, data) => {
+    const updateDownloadView = (lotteryId, kinopoiskId, data) => {
         if (!widgetDownloadsContainer) return;
-        const element = widgetDownloadsContainer.querySelector(`[data-lottery-id="${lotteryId}"]`);
+        const key = resolveDownloadKey(lotteryId, kinopoiskId);
+        if (!key) return;
+        const element = widgetDownloadsContainer.querySelector(`[data-download-key="${key}"]`);
         if (!element) return;
 
         const title = element.querySelector('.widget-download-title');
@@ -198,14 +246,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const progressValue = Number.parseFloat(data.progress) || 0;
         if (bar) bar.style.width = `${Math.min(100, Math.max(0, progressValue))}%`;
         if (progressText) progressText.textContent = `${progressValue.toFixed(0)}%`;
-        if (speedText) speedText.textContent = data.speed ? `${data.speed} МБ/с` : '0.00 МБ/с';
+        const speedValue = typeof data.speed === 'number' ? data.speed.toFixed(2) : data.speed;
+        if (speedText) speedText.textContent = speedValue ? `${speedValue} МБ/с` : '0.00 МБ/с';
         if (etaText) etaText.textContent = data.eta || '--:--';
         if (peersText) peersText.textContent = `Сиды: ${data.seeds ?? 0} / Пиры: ${data.peers ?? 0}`;
     };
 
-    const markDownloadCompleted = (lotteryId) => {
+    const markDownloadCompleted = (lotteryId, kinopoiskId) => {
         if (!widgetDownloadsContainer) return;
-        const element = widgetDownloadsContainer.querySelector(`[data-lottery-id="${lotteryId}"]`);
+        const key = resolveDownloadKey(lotteryId, kinopoiskId);
+        if (!key) return;
+        const element = widgetDownloadsContainer.querySelector(`[data-download-key="${key}"]`);
         if (!element) return;
 
         const bar = element.querySelector('.progress-bar');
@@ -220,62 +271,88 @@ document.addEventListener('DOMContentLoaded', () => {
         if (etaText) etaText.textContent = '--';
         if (peersText) peersText.textContent = 'Раздача';
 
-        setTimeout(() => removeDownload(lotteryId), 5000);
+        setTimeout(() => removeDownload(lotteryId, kinopoiskId), 5000);
     };
 
-    const startTorrentStatusPolling = (lotteryId, movieName, kinopoiskId, { skipRegister = false } = {}) => {
-        if (!lotteryId) return;
+    const startTorrentStatusPolling = (
+        lotteryId,
+        movieName,
+        kinopoiskId,
+        { skipRegister = false, useKinopoiskStatus = false } = {}
+    ) => {
+        const key = getDownloadKey(lotteryId, kinopoiskId);
+        if (!key) return;
         if (!skipRegister) {
             registerDownload(lotteryId, movieName, kinopoiskId);
         }
 
-        if (pollIntervals.has(lotteryId)) {
-            clearInterval(pollIntervals.get(lotteryId));
+        if (pollIntervals.has(key)) {
+            clearInterval(pollIntervals.get(key));
         }
 
         const poll = async () => {
             try {
-                const response = await fetch(`/api/torrent-status/${lotteryId}`);
-                if (!response.ok) {
-                    throw new Error('Сервер вернул ошибку статуса');
+                let data;
+                if (useKinopoiskStatus && kinopoiskId) {
+                    const response = await fetch(`/api/download-status/${kinopoiskId}`);
+                    if (!response.ok) {
+                        throw new Error('Сервер вернул ошибку статуса');
+                    }
+                    data = await response.json();
+                } else if (lotteryId) {
+                    const response = await fetch(`/api/torrent-status/${lotteryId}`);
+                    if (!response.ok) {
+                        throw new Error('Сервер вернул ошибку статуса');
+                    }
+                    data = await response.json();
+                } else {
+                    return;
                 }
-                const data = await response.json();
 
                 if (data.status === 'error') {
-                    updateDownloadView(lotteryId, data);
-                    if (pollIntervals.has(lotteryId)) {
-                        clearInterval(pollIntervals.get(lotteryId));
-                        pollIntervals.delete(lotteryId);
+                    updateDownloadView(lotteryId, kinopoiskId, data);
+                    if (pollIntervals.has(key)) {
+                        clearInterval(pollIntervals.get(key));
+                        pollIntervals.delete(key);
                     }
                     return;
                 }
 
-                updateDownloadView(lotteryId, data);
+                if (data.status === 'not_found' && useKinopoiskStatus) {
+                    removeDownload(lotteryId, kinopoiskId);
+                    if (pollIntervals.has(key)) {
+                        clearInterval(pollIntervals.get(key));
+                        pollIntervals.delete(key);
+                    }
+                    return;
+                }
+
+                updateDownloadView(lotteryId, kinopoiskId, data);
 
                 const progressValue = Number.parseFloat(data.progress) || 0;
                 const statusText = (data.status || '').toLowerCase();
                 const isCompleted = progressValue >= 100 || statusText.includes('seeding') || statusText.includes('completed');
 
                 if (isCompleted) {
-                    if (pollIntervals.has(lotteryId)) {
-                        clearInterval(pollIntervals.get(lotteryId));
-                        pollIntervals.delete(lotteryId);
+                    if (pollIntervals.has(key)) {
+                        clearInterval(pollIntervals.get(key));
+                        pollIntervals.delete(key);
                     }
-                    markDownloadCompleted(lotteryId);
+                    markDownloadCompleted(lotteryId, kinopoiskId);
                 }
             } catch (error) {
                 console.error('Ошибка при опросе статуса торрента:', error);
-                updateDownloadView(lotteryId, { status: 'error', message: 'Нет связи с qBittorrent' });
-                if (pollIntervals.has(lotteryId)) {
-                    clearInterval(pollIntervals.get(lotteryId));
-                    pollIntervals.delete(lotteryId);
+                updateDownloadView(lotteryId, kinopoiskId, { status: 'error', message: 'Нет связи с qBittorrent' });
+                if (pollIntervals.has(key)) {
+                    clearInterval(pollIntervals.get(key));
+                    pollIntervals.delete(key);
                 }
             }
         };
 
         poll();
         const intervalId = setInterval(poll, 3000);
-        pollIntervals.set(lotteryId, intervalId);
+        pollIntervals.set(key, intervalId);
     };
 
     const initializeStoredDownloads = () => {
@@ -283,8 +360,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const stored = loadStoredDownloads();
         stored.forEach((entry) => {
             if (!entry || !entry.lotteryId) return;
-            startTorrentStatusPolling(entry.lotteryId, entry.movieName, entry.kinopoiskId);
+            startTorrentStatusPolling(entry.lotteryId, entry.movieName, entry.kinopoiskId, {
+                skipRegister: false,
+                useKinopoiskStatus: Boolean(entry.kinopoiskId),
+            });
         });
+    };
+
+    const syncExternalDownloads = async () => {
+        if (!gallery || !widget) return;
+        try {
+            const response = await fetch('/api/active-downloads');
+            if (!response.ok) return;
+            const payload = await response.json();
+            const downloads = Array.isArray(payload.downloads) ? payload.downloads : [];
+            downloads.forEach((item) => {
+                const kinopoiskId = item.kinopoisk_id != null ? String(item.kinopoisk_id) : '';
+                if (!kinopoiskId) return;
+                const card = gallery.querySelector(`.gallery-item[data-kinopoisk-id="${kinopoiskId}"]`);
+                if (!card) return;
+                const lotteryId = card.dataset.lotteryId;
+                const movieName = card.dataset.movieName || item.name;
+                registerDownload(lotteryId, movieName, kinopoiskId, { skipSave: false });
+                updateDownloadView(lotteryId, kinopoiskId, item);
+                startTorrentStatusPolling(lotteryId, movieName, kinopoiskId, {
+                    skipRegister: true,
+                    useKinopoiskStatus: true,
+                });
+            });
+        } catch (error) {
+            console.warn('Не удалось синхронизировать активные загрузки:', error);
+        }
     };
 
     const formatDateBadges = () => {
@@ -393,9 +499,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok || !data.success) {
                 throw new Error(data.message || 'Не удалось добавить фильм.');
             }
-            alert(data.message || 'Фильм добавлен в библиотеку.');
+            showToast(data.message || 'Фильм добавлен в библиотеку.', 'success');
         } catch (error) {
-            alert(error.message);
+            showToast(error.message, 'error');
         }
     };
 
@@ -477,7 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleSaveMagnet = async (lotteryId, kinopoiskId, magnetLink) => {
         if (!kinopoiskId) {
-            alert('Не удалось определить ID фильма для сохранения magnet-ссылки.');
+            showToast('Не удалось определить ID фильма для сохранения magnet-ссылки.', 'error');
             return;
         }
         try {
@@ -487,7 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ kinopoisk_id: kinopoiskId, magnet_link: magnetLink }),
             });
             const data = await response.json();
-            alert(data.message);
+            showToast(data.message, data.success ? 'success' : 'error');
             if (!response.ok || !data.success) {
                 return;
             }
@@ -498,21 +604,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('Ошибка при сохранении magnet-ссылки:', error);
-            alert('Произошла критическая ошибка.');
+            showToast('Произошла критическая ошибка.', 'error');
         }
     };
 
     const handleDeleteLottery = async (lotteryId, cardElement) => {
-        if (!confirm('Вы уверены, что хотите удалить эту лотерею? Торрент и скачанные файлы также будут удалены из qBittorrent.')) {
-            return;
-        }
         try {
             const response = await fetch(`/delete-lottery/${lotteryId}`, { method: 'POST' });
             const data = await response.json();
-            alert(data.message);
+            showToast(data.message, response.ok && data.success ? 'success' : 'error');
             if (response.ok && data.success) {
                 cardElement.classList.add('is-deleting');
-                removeDownload(lotteryId);
+                removeDownload(lotteryId, cardElement.dataset.kinopoiskId);
                 setTimeout(() => {
                     cardElement.remove();
                     formatDateBadges();
@@ -520,7 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('Ошибка при удалении лотереи:', error);
-            alert('Не удалось удалить лотерею.');
+            showToast('Не удалось удалить лотерею.', 'error');
         }
     };
 
@@ -568,9 +671,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteBtn = modalWinnerInfo.querySelector('.delete-magnet-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', () => {
-                if (confirm('Вы уверены, что хотите удалить сохраненную magnet-ссылку?')) {
-                    handleSaveMagnet(currentModalLotteryId, winner.kinopoisk_id, '');
-                }
+                handleSaveMagnet(currentModalLotteryId, winner.kinopoisk_id, '');
             });
         }
 
@@ -647,7 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleDownloadClick = async (kinopoiskId, movieName, lotteryId) => {
         if (!kinopoiskId) {
-            alert('Сначала добавьте magnet-ссылку для этого фильма.');
+            showToast('Сначала добавьте magnet-ссылку для этого фильма.', 'warning');
             openModal(lotteryId);
             return;
         }
@@ -657,14 +758,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 startTorrentStatusPolling(lotteryId, movieName, kinopoiskId, { skipRegister: true });
+                showToast('Загрузка началась.', 'success');
             } else {
-                alert(`Ошибка: ${data.message}`);
-                removeDownload(lotteryId);
+                showToast(`Ошибка: ${data.message}`, 'error');
+                removeDownload(lotteryId, kinopoiskId);
             }
         } catch (error) {
             console.error('Ошибка при запуске скачивания:', error);
-            alert('Произошла критическая ошибка.');
-            removeDownload(lotteryId);
+            showToast('Произошла критическая ошибка.', 'error');
+            removeDownload(lotteryId, kinopoiskId);
         }
     };
 
@@ -814,5 +916,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initializeStoredDownloads();
     ensureWidgetState();
+    syncExternalDownloads();
+    if (widget) {
+        setInterval(syncExternalDownloads, 5000);
+        window.addEventListener('focus', syncExternalDownloads);
+    }
     formatDateBadges();
 });

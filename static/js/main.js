@@ -74,10 +74,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!response.ok || !data.success) {
                         throw new Error(data.message || 'Не удалось добавить фильм.');
                     }
-                    alert(data.message || 'Фильм добавлен в библиотеку.');
+                    showToast(data.message || 'Фильм добавлен в библиотеку.', 'success');
                     e.target.textContent = 'Добавлено!';
                 } catch (error) {
-                    alert(error.message);
+                    showToast(error.message, 'error');
                     e.target.textContent = originalText;
                     e.target.disabled = false;
                     return;
