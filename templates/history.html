@@ -21,6 +21,47 @@
         </div>
     </header>
 
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="icon-download-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#5be5d5"/>
+                <stop offset="100%" stop-color="#1c8b79"/>
+            </linearGradient>
+            <linearGradient id="icon-download-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="#0f5a4c" stop-opacity="0.9"/>
+            </linearGradient>
+            <linearGradient id="icon-download-base" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#8fffe8" stop-opacity="0.95"/>
+                <stop offset="100%" stop-color="#1a6c5c" stop-opacity="0.95"/>
+            </linearGradient>
+            <linearGradient id="icon-search-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ffe17d"/>
+                <stop offset="100%" stop-color="#d1970c"/>
+            </linearGradient>
+            <linearGradient id="icon-search-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#fff5c7" stop-opacity="0.9"/>
+                <stop offset="100%" stop-color="#7b4b00" stop-opacity="0.9"/>
+            </linearGradient>
+            <linearGradient id="icon-delete-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ff9b9b"/>
+                <stop offset="100%" stop-color="#d62828"/>
+            </linearGradient>
+        </defs>
+        <symbol id="icon-download" viewBox="0 0 36 36">
+            <path d="M18 4a1.2 1.2 0 0 0-1.2 1.2v13.07l-4.18-4.18a1.2 1.2 0 1 0-1.7 1.7l6.48 6.49a1.2 1.2 0 0 0 1.7 0l6.48-6.49a1.2 1.2 0 1 0-1.7-1.7l-4.18 4.18V5.2A1.2 1.2 0 0 0 18 4Z" fill="url(#icon-download-gradient)" stroke="url(#icon-download-stroke)" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M9.5 24.5h17a1.5 1.5 0 0 1 0 3h-17a1.5 1.5 0 0 1 0-3Z" fill="url(#icon-download-base)" stroke="url(#icon-download-stroke)" stroke-width="1" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-search" viewBox="0 0 36 36">
+            <circle cx="15" cy="15" r="8" fill="url(#icon-search-gradient)" stroke="url(#icon-search-stroke)" stroke-width="1.4"/>
+            <path d="M20.6 20.6 27.5 27.5" stroke="url(#icon-search-stroke)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-delete" viewBox="0 0 36 36">
+            <path d="M11 11 25 25" stroke="url(#icon-delete-gradient)" stroke-width="3.2" stroke-linecap="round"/>
+            <path d="M25 11 11 25" stroke="url(#icon-delete-gradient)" stroke-width="3.2" stroke-linecap="round"/>
+        </symbol>
+    </svg>
+
     <div class="history-gallery">
         {% for lottery in lotteries %}
             {% if lottery.result_name %}
@@ -43,12 +84,23 @@
                     <div class="action-buttons">
                         {# ИЗМЕНЕНИЕ: Проверяем наличие идентификатора в словаре #}
                         {% if has_identifier %}
-                            <button class="action-button download-button" title="Скачать фильм">&#x2913;</button>
+                            <button type="button" class="icon-button download-button" title="Скачать фильм" aria-label="Скачать фильм">
+                                <svg class="icon-svg icon-download" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                                    <use href="#icon-download"></use>
+                                </svg>
+                            </button>
                         {% else %}
-                            <button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>
+                            <button type="button" class="icon-button search-button" title="Искать торрент" aria-label="Искать торрент">
+                                <svg class="icon-svg icon-search" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                                    <use href="#icon-search"></use>
+                                </svg>
+                            </button>
                         {% endif %}
-                        <button class="action-button library-button" title="Добавить в библиотеку">&#128218;</button>
-                        <button class="action-button-delete delete-button" title="Удалить лотерею">&times;</button>
+                        <button type="button" class="icon-button delete-button" title="Удалить лотерею" aria-label="Удалить лотерею">
+                            <svg class="icon-svg icon-delete" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                                <use href="#icon-delete"></use>
+                            </svg>
+                        </button>
                     </div>
                     <div class="date-badge" data-date="{{ lottery.created_at.isoformat() }}"></div>
                     <img src="{{ lottery.result_poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result_name }}">
@@ -57,7 +109,11 @@
                 {# --- КАРТОЧКА ДЛЯ ОЖИДАЮЩЕЙ ЛОТЕРЕИ --- #}
                 <div class="gallery-item waiting-card" data-lottery-id="{{ lottery.id }}">
                     <div class="action-buttons">
-                         <button class="action-button-delete delete-button" title="Удалить лотерею">&times;</button>
+                         <button type="button" class="icon-button delete-button" title="Удалить лотерею" aria-label="Удалить лотерею">
+                            <svg class="icon-svg icon-delete" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+                                <use href="#icon-delete"></use>
+                            </svg>
+                        </button>
                     </div>
                     <div class="waiting-content">
                         <div class="loader-small"></div>

@@ -345,25 +345,55 @@ button:disabled {
     transform: scale(1);
 }
 
-.delete-button, .torrent-button {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
+.action-buttons .icon-button {
+    width: 36px;
+    height: 36px;
     border: none;
-    background-color: rgba(0,0,0,0.6);
-    color: white;
-    font-size: 20px;
-    line-height: 30px;
-    text-align: center;
+    background: transparent;
     padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
-.delete-button:hover { background-color: var(--danger-color); }
-.torrent-button:hover { background-color: var(--torrent-color); }
-.torrent-button.status-downloading { background-color: var(--torrent-color); }
-.torrent-button.status-seeding, .torrent-button.status-completed { background-color: var(--torrent-done-color); }
+.action-buttons .icon-button:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+
+.action-buttons .icon-button svg {
+    width: 26px;
+    height: 26px;
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.55));
+    transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.action-buttons .icon-button:hover svg {
+    transform: translateY(-1px) scale(1.03);
+    filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.6));
+}
+
+.action-buttons .icon-button:active svg {
+    transform: translateY(0) scale(0.97);
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.action-buttons .icon-button[disabled],
+.action-buttons .icon-button[disabled] svg {
+    cursor: not-allowed;
+    opacity: 0.55;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+.icon-sprite {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
 
 .gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease, filter 0.4s ease; animation: reveal 0.5s ease-out forwards; }
 .gallery-item:hover img { transform: scale(1.05); filter: brightness(1.1); }
