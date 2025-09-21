@@ -299,7 +299,8 @@ def start_download(kinopoisk_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        qbt_client.torrents_add(urls=identifier.magnet_link, category=category, is_sequential='true')
+        # ИЗМЕНЕНИЕ: Заменяем 'is_sequential' на правильный параметр 'sequential=True'
+        qbt_client.torrents_add(urls=identifier.magnet_link, category=category, sequential=True)
         qbt_client.auth_log_out()
         return jsonify({"success": True, "message": "Загрузка началась!"})
     except Exception as e:

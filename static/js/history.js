@@ -126,6 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(data.message);
             if (data.success) {
                 cardElement.classList.add('is-deleting');
+                // ИЗМЕНЕНИЕ: Скрываем виджет и останавливаем опрос
+                if (statusPollInterval) clearInterval(statusPollInterval);
+                widget.style.display = 'none';
                 setTimeout(() => cardElement.remove(), 500);
             }
         } catch (error) {
@@ -149,7 +152,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.result) {
                 renderWinnerCard(data.result);
             } else {
-                 modalWinnerInfo.innerHTML = `<h3>Лотерея ожидает розыгрыша</h3><p>Поделитесь ссылкой с другом, чтобы он мог выбрать фильм.</p>`;
+                const playUrl = data.play_url;
+                const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
+                const url = encodeURIComponent(playUrl);
+                const telegramHref = `https://t.me/share/url?url=${url}&text=${text}`;
+
+                modalWinnerInfo.innerHTML = `
+                    <h3>Лотерея ожидает розыгрыша</h3>
+                    <p>Поделитесь ссылкой с другом, чтобы он мог выбрать фильм.</p>
+                    <div class="link-box">
+                        <label for="play-link-modal">Ссылка для друга:</label>
+                        <input type="text" id="play-link-modal" value="${playUrl}" readonly>
+                        <button class="copy-btn" data-target="play-link-modal">Копировать</button>
+                    </div>
+                    <a href="${telegramHref}" class="action-button-tg" target="_blank">
+                        Поделиться в Telegram
+                    </a>
+                `;
+
+                modalWinnerInfo.querySelector('.copy-btn').addEventListener('click', (e) => {
+                    const targetId = e.target.dataset.target;
+                    const input = document.getElementById(targetId);
+                    input.select();
+                    document.execCommand('copy');
+                    e.target.textContent = 'Скопировано!';
+                    setTimeout(() => { e.target.textContent = 'Копировать'; }, 2000);
+                });
             }
         } catch (error) {
             modalWinnerInfo.innerHTML = `<p class="error-message">Не удалось загрузить детали: ${error.message}</p>`;
