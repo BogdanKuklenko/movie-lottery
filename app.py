@@ -56,7 +56,21 @@ class Movie(db.Model):
     rating_kp = db.Column(db.Float, nullable=True)
     genres = db.Column(db.String(200), nullable=True)
     countries = db.Column(db.String(200), nullable=True)
-    
+
+
+class LibraryMovie(db.Model):
+    __tablename__ = 'library_movie'
+    id = db.Column(db.Integer, primary_key=True)
+    kinopoisk_id = db.Column(db.Integer, unique=True, nullable=True)
+    name = db.Column(db.String(200), nullable=False)
+    poster = db.Column(db.String(500), nullable=True)
+    year = db.Column(db.String(10), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    rating_kp = db.Column(db.Float, nullable=True)
+    genres = db.Column(db.String(200), nullable=True)
+    countries = db.Column(db.String(200), nullable=True)
+    added_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
 class BackgroundPhoto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     poster_url = db.Column(db.String(500), unique=True, nullable=False)
@@ -119,6 +133,24 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
+
+def ensure_background_photo(poster_url):
+    if not poster_url:
+        return
+
+    if BackgroundPhoto.query.filter_by(poster_url=poster_url).first():
+        return
+
+    max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
+    new_photo = BackgroundPhoto(
+        poster_url=poster_url,
+        pos_top=random.uniform(5, 65),
+        pos_left=random.uniform(5, 75),
+        rotation=random.randint(-30, 30),
+        z_index=max_z_index + 1,
+    )
+    db.session.add(new_photo)
+
 # --- Маршруты ---
 @app.route('/')
 def index():
@@ -150,14 +182,10 @@ def create_lottery():
         )
         db.session.add(new_movie)
     
-    max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
     for movie_data in movies_json:
         if poster := movie_data.get('poster'):
-            if not BackgroundPhoto.query.filter_by(poster_url=poster).first():
-                max_z_index += 1
-                new_photo = BackgroundPhoto(poster_url=poster, pos_top=random.uniform(5, 65), pos_left=random.uniform(5, 75), rotation=random.randint(-30, 30), z_index=max_z_index)
-                db.session.add(new_photo)
-    
+            ensure_background_photo(poster)
+
     db.session.commit()
     return jsonify({"wait_url": url_for('wait_for_result', lottery_id=new_lottery.id)})
 
@@ -189,9 +217,24 @@ def history():
 
     # Передаем в шаблон и лотереи, и словарь с magnet-ссылками
     return render_template(
-        'history.html', 
-        lotteries=lotteries, 
+        'history.html',
+        lotteries=lotteries,
         identifiers=identifiers,
+        background_photos=get_background_photos()
+    )
+
+
+@app.route('/library')
+def library():
+    library_movies = LibraryMovie.query.order_by(LibraryMovie.added_at.desc()).all()
+    for movie in library_movies:
+        if movie.kinopoisk_id:
+            movie.identifier = MovieIdentifier.query.get(movie.kinopoisk_id)
+        else:
+            movie.identifier = None
+    return render_template(
+        'library.html',
+        library_movies=library_movies,
         background_photos=get_background_photos()
     )
 
@@ -221,13 +264,115 @@ def get_result_data(lottery_id):
     for m in lottery.movies:
         identifier = MovieIdentifier.query.get(m.kinopoisk_id)
         movies_data.append({
-            "kinopoisk_id": m.kinopoisk_id, "name": m.name, "poster": m.poster, "year": m.year, 
+            "kinopoisk_id": m.kinopoisk_id, "name": m.name, "poster": m.poster, "year": m.year,
             "description": m.description, "rating_kp": m.rating_kp, "genres": m.genres, "countries": m.countries,
             "has_magnet": bool(identifier), "magnet_link": identifier.magnet_link if identifier else None
         })
 
     result_data = next((m for m in movies_data if m["name"] == lottery.result_name), None) if lottery.result_name else None
     return jsonify({"movies": movies_data, "result": result_data, "createdAt": lottery.created_at.isoformat() + "Z", "play_url": url_for('play_lottery', lottery_id=lottery.id, _external=True)})
+
+
+@app.route('/api/library', methods=['POST'])
+def add_library_movie():
+    payload = request.json or {}
+    movie_data = payload.get('movie') if isinstance(payload.get('movie'), dict) else payload
+
+    if not movie_data:
+        return jsonify({"success": False, "message": "Данные о фильме не переданы."}), 400
+
+    kinopoisk_id = movie_data.get('kinopoisk_id')
+    name = movie_data.get('name')
+    year = movie_data.get('year')
+    if isinstance(year, str) and year.lower() in ('', 'none', 'null'):
+        year = None
+
+    source_movie = None
+    if kinopoisk_id:
+        source_movie = Movie.query.filter_by(kinopoisk_id=kinopoisk_id).order_by(Movie.id.desc()).first()
+    elif movie_data.get('lottery_id') and movie_data.get('name'):
+        source_movie = Movie.query.filter_by(lottery_id=movie_data['lottery_id'], name=movie_data['name']).first()
+
+    if source_movie:
+        movie_data = {
+            **{k: v for k, v in movie_data.items() if v not in (None, '')},
+            "kinopoisk_id": kinopoisk_id or source_movie.kinopoisk_id,
+            "name": name or source_movie.name,
+            "poster": movie_data.get('poster') or source_movie.poster,
+            "year": year or source_movie.year,
+            "description": movie_data.get('description') or source_movie.description,
+            "rating_kp": movie_data.get('rating_kp') if movie_data.get('rating_kp') not in (None, '') else source_movie.rating_kp,
+            "genres": movie_data.get('genres') or source_movie.genres,
+            "countries": movie_data.get('countries') or source_movie.countries,
+        }
+        kinopoisk_id = movie_data.get('kinopoisk_id')
+        name = movie_data.get('name')
+        year = movie_data.get('year')
+
+    if not name:
+        return jsonify({"success": False, "message": "Не удалось определить название фильма."}), 400
+
+    existing = None
+    if kinopoisk_id:
+        existing = LibraryMovie.query.filter_by(kinopoisk_id=kinopoisk_id).first()
+    if not existing:
+        existing = LibraryMovie.query.filter_by(name=name, year=year).first()
+
+    message = "Фильм добавлен в библиотеку."
+
+    poster_after_update = None
+
+    if existing:
+        existing.name = name
+        if movie_data.get('poster'): existing.poster = movie_data['poster']
+        if year: existing.year = year
+        if movie_data.get('description'): existing.description = movie_data['description']
+        if movie_data.get('rating_kp') not in (None, ''):
+            try:
+                existing.rating_kp = float(movie_data['rating_kp'])
+            except (TypeError, ValueError):
+                pass
+        if movie_data.get('genres'): existing.genres = movie_data['genres']
+        if movie_data.get('countries'): existing.countries = movie_data['countries']
+        if kinopoisk_id: existing.kinopoisk_id = kinopoisk_id
+        existing.added_at = datetime.utcnow()
+        message = "Информация о фильме обновлена в библиотеке."
+        poster_after_update = existing.poster
+    else:
+        rating_value = None
+        raw_rating = movie_data.get('rating_kp')
+        if raw_rating not in (None, ''):
+            try:
+                rating_value = float(raw_rating)
+            except (TypeError, ValueError):
+                rating_value = None
+
+        new_movie = LibraryMovie(
+            kinopoisk_id=kinopoisk_id,
+            name=name,
+            poster=movie_data.get('poster'),
+            year=year,
+            description=movie_data.get('description'),
+            rating_kp=rating_value,
+            genres=movie_data.get('genres'),
+            countries=movie_data.get('countries'),
+        )
+        db.session.add(new_movie)
+        poster_after_update = new_movie.poster
+
+    if poster_after_update:
+        ensure_background_photo(poster_after_update)
+
+    db.session.commit()
+    return jsonify({"success": True, "message": message})
+
+
+@app.route('/api/library/<int:movie_id>', methods=['DELETE'])
+def remove_library_movie(movie_id):
+    library_movie = LibraryMovie.query.get_or_404(movie_id)
+    db.session.delete(library_movie)
+    db.session.commit()
+    return jsonify({"success": True, "message": "Фильм удален из библиотеки."})
 
 # --- ОБНОВЛЕННЫЙ МАРШРУТ УДАЛЕНИЯ ---
 @app.route('/delete-lottery/<lottery_id>', methods=['POST'])
@@ -273,6 +418,8 @@ def save_movie_magnet():
         return jsonify({"success": False, "message": "Отсутствует ID фильма"}), 400
 
     identifier = MovieIdentifier.query.get(kinopoisk_id)
+    magnet_link = (magnet_link or '').strip()
+
     if magnet_link:
         if identifier:
             identifier.magnet_link = magnet_link
@@ -285,9 +432,15 @@ def save_movie_magnet():
         message = "Magnet-ссылка удалена."
     else:
         message = "Действий не требуется."
-        
+
     db.session.commit()
-    return jsonify({"success": True, "message": message})
+    refreshed_identifier = MovieIdentifier.query.get(kinopoisk_id)
+    return jsonify({
+        "success": True,
+        "message": message,
+        "has_magnet": bool(refreshed_identifier),
+        "magnet_link": refreshed_identifier.magnet_link if refreshed_identifier else "",
+    })
 
 
 @app.route('/api/start-download/<int:kinopoisk_id>', methods=['POST'])
@@ -299,8 +452,12 @@ def start_download(kinopoisk_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        # ИЗМЕНЕНИЕ: Заменяем 'is_sequential' на правильный параметр 'sequential=True'
-        qbt_client.torrents_add(urls=identifier.magnet_link, category=category, sequential=True)
+        qbt_client.torrents_add(
+            urls=identifier.magnet_link,
+            category=category,
+            is_sequential_download=True,
+            is_first_last_piece_priority=True,
+        )
         qbt_client.auth_log_out()
         return jsonify({"success": True, "message": "Загрузка началась!"})
     except Exception as e:
