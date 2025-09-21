@@ -42,17 +42,15 @@
             {% if lottery.result_name %}
                 {# --- КАРТОЧКА ДЛЯ ЗАВЕРШЕННОЙ ЛОТЕРЕИ --- #}
                 {% set winner_movie = lottery.movies|selectattr('name', 'equalto', lottery.result_name)|first %}
-                
-                {# ИЗМЕНЕНИЕ: Теперь мы берем информацию из словаря 'identifiers' #}
                 {% set has_identifier = winner_movie and winner_movie.kinopoisk_id in identifiers and identifiers[winner_movie.kinopoisk_id] is not none %}
 
                 <div class="gallery-item"
                      data-lottery-id="{{ lottery.id }}"
                      data-kinopoisk-id="{{ winner_movie.kinopoisk_id if winner_movie else '' }}"
-                     data-movie-name="{{ lottery.result_name }}"
-                     data-movie-year="{{ lottery.result_year }}"
+                     data-movie-name="{{ lottery.result_name|e }}"
+                     data-movie-year="{{ lottery.result_year or '' }}"
                      data-movie-poster="{{ (lottery.result_poster or '')|e }}"
-                     data-movie-description="{{ (winner_movie.description|default('', true))|e if winner_movie else '' }}"
+                     data-movie-description="{{ (winner_movie.description|default('', true)|replace('\n', ' '))|e if winner_movie else '' }}"
                      data-movie-rating="{{ '%.1f'|format(winner_movie.rating_kp) if winner_movie and winner_movie.rating_kp is not none else '' }}"
                      data-movie-genres="{{ (winner_movie.genres|default('', true))|e if winner_movie else '' }}"
                      data-movie-countries="{{ (winner_movie.countries|default('', true))|e if winner_movie else '' }}"
@@ -76,7 +74,7 @@
                         </button>
                     </div>
                     <div class="date-badge" data-date="{{ lottery.created_at.isoformat() }}"></div>
-                    <img src="{{ lottery.result_poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result_name }}">
+                    <img src="{{ lottery.result_poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result_name|e }}">
                 </div>
             {% else %}
                 {# --- КАРТОЧКА ДЛЯ ОЖИДАЮЩЕЙ ЛОТЕРЕИ --- #}
@@ -112,7 +110,7 @@
         </div>
     </div>
 
-    {# --- ОБНОВЛЕННЫЙ ВИДЖЕТ СТАТУСА --- #}
+    {# --- ВИДЖЕТ СТАТУСА --- #}
     <div id="torrent-status-widget" class="status-widget" style="display: none;">
         <div class="widget-header">
             <h4>Статус загрузки</h4>

@@ -11,7 +11,7 @@ from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
-from qbittorrentapi import Client
+from qbittorrentapi import Client, exceptions as qbittorrent_exceptions
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -375,9 +375,9 @@ def delete_lottery(lottery_id):
     lottery_to_delete = Lottery.query.get(lottery_id)
     if not lottery_to_delete:
         return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
-
+    
+    message = ""
     try:
-        print(f"Попытка удалить торренты для лотереи {lottery_id}")
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
         
@@ -387,19 +387,22 @@ def delete_lottery(lottery_id):
         if torrents_to_delete:
             hashes_to_delete = [t.hash for t in torrents_to_delete]
             qbt_client.torrents_delete(delete_files=True, torrent_hashes=hashes_to_delete)
-            print(f"Удалено {len(hashes_to_delete)} торрентов из qBittorrent.")
+            message = "Лотерея и связанный торрент успешно удалены."
         else:
-            print("Торренты для этой лотереи в qBittorrent не найдены.")
+            message = "Торрент не найден в клиенте. Лотерея удалена из истории."
             
         qbt_client.auth_log_out()
 
+    except (qbittorrent_exceptions.APIConnectionError, requests.exceptions.RequestException) as e:
+        message = "Не удалось подключиться к qBittorrent. Лотерея будет удалена только из истории."
+        print(f"Ошибка подключения к qBittorrent при удалении: {e}")
     except Exception as e:
-        print(f"Ошибка при удалении торрентов из qBittorrent: {e}")
-        # Не прерываем удаление из БД, даже если qBittorrent недоступен
+        message = "Произошла ошибка при работе с qBittorrent. Лотерея будет удалена только из истории."
+        print(f"Неизвестная ошибка qBittorrent при удалении: {e}")
     
     db.session.delete(lottery_to_delete)
     db.session.commit()
-    return jsonify({"success": True, "message": "Лотерея и связанные торренты удалены."})
+    return jsonify({"success": True, "message": message})
 
 
 # --- НОВЫЕ И ОБНОВЛЕННЫЕ МАРШРУТЫ ---

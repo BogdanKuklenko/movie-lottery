@@ -20,55 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const pollIntervals = new Map();
     const activeDownloads = new Map();
 
-    const ICON_SVG = {
-        download: '
-            <svg class="icon-svg icon-download" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
-                <use href="#icon-download"></use>
-            </svg>
-        ',
-        search: '
-            <svg class="icon-svg icon-search" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
-                <use href="#icon-search"></use>
-            </svg>
-        ',
-        delete: '
-            <svg class="icon-svg icon-delete" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
-                <use href="#icon-delete"></use>
-            </svg>
-        ',
-    };
-
-    const DOWNLOAD_BUTTON_HTML = `
-        <button type="button" class="icon-button download-button" title="Скачать фильм" aria-label="Скачать фильм">
-            ${ICON_SVG.download}
-        </button>
-    `;
-
-    const SEARCH_BUTTON_HTML = `
-        <button type="button" class="icon-button search-button" title="Искать торрент" aria-label="Искать торрент">
-            ${ICON_SVG.search}
-        </button>
-    `;
-
-    const DELETE_BUTTON_HTML = `
-        <button type="button" class="icon-button delete-button" title="Удалить лотерею" aria-label="Удалить лотерею">
-            ${ICON_SVG.delete}
-        </button>
-    `;
-
-    const getDownloadKey = (lotteryId, kinopoiskId) => {
-        if (kinopoiskId) {
-            return `kp-${kinopoiskId}`;
-        }
-        if (lotteryId) {
-            return `lottery-${lotteryId}`;
-        }
-        return null;
-    };
-
-    const normalizeId = (value) => (value === null || value === undefined ? '' : String(value));
-
     let currentModalLotteryId = null;
+
+    // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
     const escapeHtml = (value) => {
         if (value === null || value === undefined) {
@@ -90,7 +44,15 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;');
     };
-
+    
+    const getDownloadKey = (lotteryId, kinopoiskId) => {
+        if (kinopoiskId) return `kp-${kinopoiskId}`;
+        if (lotteryId) return `lottery-${lotteryId}`;
+        return null;
+    };
+    
+    const normalizeId = (value) => (value === null || value === undefined ? '' : String(value));
+    
     const safeJsonParse = (value) => {
         try {
             return JSON.parse(value);
@@ -98,6 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
     };
+
+    // --- ЛОГИКА ВИДЖЕТА ЗАГРУЗОК (СОХРАНЕНА ИЗ ОРИГИНАЛА) ---
 
     const saveActiveDownloads = () => {
         if (!widget) return;
@@ -222,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     };
-
+    
     const removeDownload = (lotteryId, kinopoiskId) => {
         const key = resolveDownloadKey(lotteryId, kinopoiskId);
         if (!key) return;
@@ -309,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setTimeout(() => removeDownload(lotteryId, kinopoiskId), 5000);
     };
-
+    
     const startTorrentStatusPolling = (
         lotteryId,
         movieName,
@@ -429,405 +393,73 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const formatDateBadges = () => {
-        if (!gallery) return;
-        const formatter = new Intl.DateTimeFormat('ru-RU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-        });
+    // --- ЛОГИКА ОЖИДАЮЩИХ КАРТОЧЕК ---
 
-        gallery.querySelectorAll('.date-badge').forEach((badge) => {
-            const iso = badge.dataset.date;
-            if (!iso) return;
-            const date = new Date(iso);
-            if (Number.isNaN(date.getTime())) return;
-            badge.textContent = formatter.format(date);
+    const waitingCards = new Map();
+    
+    const collectWaitingCards = () => {
+        waitingCards.clear();
+        gallery.querySelectorAll('.waiting-card').forEach(card => {
+            const lotteryId = card.dataset.lotteryId;
+            if (lotteryId) waitingCards.set(lotteryId, card);
         });
     };
 
-    const ensureDownloadButton = (buttons) => {
-        if (!buttons) return null;
-        let downloadBtn = buttons.querySelector('.download-button');
-        if (!downloadBtn) {
-            downloadBtn = document.createElement('button');
-            downloadBtn.type = 'button';
-            downloadBtn.className = 'icon-button download-button';
-            downloadBtn.title = 'Скачать фильм';
-            downloadBtn.setAttribute('aria-label', 'Скачать фильм');
-            downloadBtn.innerHTML = ICON_SVG.download;
-            buttons.prepend(downloadBtn);
-        }
-        return downloadBtn;
-    };
+    const createCompletedCard = (lottery, winner) => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        // Копируем все data-атрибуты из ответа сервера
+        item.dataset.lotteryId = lottery.id;
+        item.dataset.kinopoiskId = winner.kinopoisk_id || '';
+        item.dataset.movieName = winner.name || '';
+        item.dataset.movieYear = winner.year || '';
+        item.dataset.moviePoster = winner.poster || '';
+        item.dataset.movieDescription = winner.description || '';
+        item.dataset.movieRating = winner.rating_kp != null ? winner.rating_kp : '';
+        item.dataset.movieGenres = winner.genres || '';
+        item.dataset.movieCountries = winner.countries || '';
+        item.dataset.hasMagnet = winner.has_magnet ? 'true' : 'false';
+        item.dataset.magnetLink = winner.magnet_link || '';
 
-    const ensureSearchButton = (buttons) => {
-        if (!buttons) return null;
-        let searchBtn = buttons.querySelector('.search-button');
-        if (!searchBtn) {
-            searchBtn = document.createElement('button');
-            searchBtn.type = 'button';
-            searchBtn.className = 'icon-button search-button';
-            searchBtn.title = 'Искать торрент';
-            searchBtn.setAttribute('aria-label', 'Искать торрент');
-            searchBtn.innerHTML = ICON_SVG.search;
-            const deleteBtn = buttons.querySelector('.delete-button');
-            if (deleteBtn) {
-                buttons.insertBefore(searchBtn, deleteBtn);
-            } else {
-                buttons.appendChild(searchBtn);
-            }
-        }
-        return searchBtn;
-    };
-
-    const updateCardMagnetState = (card, { hasMagnet, magnetLink, kinopoiskId } = {}) => {
-        if (!card) return;
-
-        if (kinopoiskId !== undefined) {
-            card.dataset.kinopoiskId = kinopoiskId ? String(kinopoiskId) : '';
-        }
-
-        const normalized = hasMagnet === true || hasMagnet === 'true';
-        card.dataset.hasMagnet = normalized ? 'true' : 'false';
-        card.dataset.magnetLink = magnetLink || '';
-
-        const buttons = card.querySelector('.action-buttons');
-        if (!buttons) return;
-
-        const downloadBtn = ensureDownloadButton(buttons);
-        const searchBtn = ensureSearchButton(buttons);
-        const hasKinopoisk = Boolean(card.dataset.kinopoiskId);
-
-        if (downloadBtn) {
-            downloadBtn.hidden = !normalized;
-            if (normalized && !hasKinopoisk) {
-                downloadBtn.setAttribute('disabled', 'disabled');
-                downloadBtn.title = 'Для этого фильма не указан kinopoisk_id';
-            } else if (normalized) {
-                downloadBtn.removeAttribute('disabled');
-                downloadBtn.title = 'Скачать фильм';
-            } else {
-                downloadBtn.removeAttribute('disabled');
-                downloadBtn.title = 'Скачать фильм';
-            }
-        }
-
-        if (searchBtn) {
-            searchBtn.hidden = normalized;
-            if (!normalized) {
-                searchBtn.title = 'Искать торрент';
-            }
-        }
-    };
-
-    const initializeCardMagnetStates = () => {
-        if (!gallery) return;
-        gallery.querySelectorAll('.gallery-item').forEach((card) => {
-            if (card.classList.contains('waiting-card')) return;
-            const hasMagnet = card.dataset.hasMagnet === 'true';
-            updateCardMagnetState(card, {
-                hasMagnet,
-                magnetLink: card.dataset.magnetLink || '',
-                kinopoiskId: card.dataset.kinopoiskId,
-            });
-        });
-    };
-
-    const refreshCardActions = (lotteryId, winner) => {
-        if (!gallery) return;
-        const card = gallery.querySelector(`.gallery-item[data-lottery-id="${lotteryId}"]`);
-        if (!card) return;
-
-        if (winner) {
-            card.dataset.kinopoiskId = winner.kinopoisk_id || '';
-            card.dataset.movieName = winner.name || '';
-            card.dataset.movieYear = winner.year || '';
-            card.dataset.moviePoster = winner.poster || '';
-            card.dataset.movieDescription = winner.description || '';
-            card.dataset.movieRating = winner.rating_kp != null ? winner.rating_kp : '';
-            card.dataset.movieGenres = winner.genres || '';
-            card.dataset.movieCountries = winner.countries || '';
-        }
-
-        updateCardMagnetState(card, {
-            hasMagnet: winner ? winner.has_magnet : false,
-            magnetLink: winner && winner.magnet_link ? winner.magnet_link : '',
-            kinopoiskId: winner ? winner.kinopoisk_id : undefined,
-        });
-    };
-
-    const copyToClipboard = async (value, feedbackTarget) => {
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(value);
-            } else {
-                const tempInput = document.createElement('input');
-                tempInput.value = value;
-                document.body.appendChild(tempInput);
-                tempInput.select();
-                document.execCommand('copy');
-                document.body.removeChild(tempInput);
-            }
-            if (feedbackTarget) {
-                const original = feedbackTarget.textContent;
-                feedbackTarget.textContent = 'Скопировано!';
-                setTimeout(() => {
-                    feedbackTarget.textContent = original;
-                }, 2000);
-            }
-        } catch (error) {
-            console.error('Не удалось скопировать ссылку:', error);
-        }
-    };
-
-    const addMovieToLibrary = async (moviePayload) => {
-        if (!moviePayload) return;
-        try {
-            const response = await fetch('/api/library', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ movie: moviePayload }),
-            });
-            const data = await response.json();
-            if (!response.ok || !data.success) {
-                throw new Error(data.message || 'Не удалось добавить фильм.');
-            }
-            showToast(data.message || 'Фильм добавлен в библиотеку.', 'success');
-        } catch (error) {
-            showToast(error.message, 'error');
-        }
-    };
-
-    const renderParticipantsList = (movies, winnerName) => {
-        if (!modalParticipantsContainer || !modalParticipantsList) return;
-        if (!movies || !movies.length) {
-            modalParticipantsContainer.style.display = 'none';
-            modalParticipantsList.innerHTML = '';
-            return;
-        }
-
-        modalParticipantsContainer.style.display = 'block';
-        modalParticipantsList.innerHTML = '';
-
-        movies.forEach((movie) => {
-            const item = document.createElement('li');
-            item.className = 'participant-item';
-            if (movie.name === winnerName) {
-                item.classList.add('winner');
-            }
-
-            item.innerHTML = `
-                <img class="participant-poster" src="${escapeAttr(movie.poster || placeholderPoster)}" alt="${escapeHtml(movie.name)}">
-                <span class="participant-name">${escapeHtml(movie.name)}</span>
-                <span class="participant-meta">${escapeHtml(movie.year || '')}</span>
-                ${movie.name === winnerName ? '<span class="participant-winner-badge">Победитель</span>' : ''}
-            `;
-
-            modalParticipantsList.appendChild(item);
-        });
-    };
-
-    const renderWaitingState = (data) => {
-        if (!modalWinnerInfo) return;
-        const playUrl = data.play_url;
-        const text = encodeURIComponent('Привет! Предлагаю тебе определить, какой фильм мы посмотрим. Нажми на ссылку и испытай удачу!');
-        const url = encodeURIComponent(playUrl);
-        const telegramHref = `https://t.me/share/url?url=${url}&text=${text}`;
-
-        modalWinnerInfo.innerHTML = `
-            <h3>Лотерея ожидает розыгрыша</h3>
-            <p>Поделитесь ссылкой с другом, чтобы он мог выбрать фильм.</p>
-            <div class="link-box">
-                <label for="play-link-modal">Ссылка для друга:</label>
-                <input type="text" id="play-link-modal" value="${escapeAttr(playUrl)}" readonly>
-                <button class="copy-btn" data-target="play-link-modal">Копировать</button>
+        item.innerHTML = `
+            <div class="action-buttons">
+                <button type="button" class="icon-button download-button" title="Скачать фильм" aria-label="Скачать фильм" ${!winner.has_magnet ? 'hidden' : ''}>
+                     <svg class="icon-svg icon-download" viewBox="0 0 24 24"><use href="#icon-download"></use></svg>
+                </button>
+                <button type="button" class="icon-button search-button" title="Искать торрент" aria-label="Искать торрент" ${winner.has_magnet ? 'hidden' : ''}>
+                     <svg class="icon-svg icon-search" viewBox="0 0 24 24"><use href="#icon-search"></use></svg>
+                </button>
+                <button type="button" class="icon-button delete-button" title="Удалить лотерею" aria-label="Удалить лотерею">
+                     <svg class="icon-svg icon-delete" viewBox="0 0 24 24"><use href="#icon-delete"></use></svg>
+                </button>
             </div>
-            <a href="${telegramHref}" class="action-button-tg" target="_blank" rel="noopener noreferrer">
-                Поделиться в Telegram
-            </a>
+            <div class="date-badge" data-date="${escapeAttr(lottery.createdAt)}"></div>
+            <img src="${escapeAttr(winner.poster || placeholderPoster)}" alt="${escapeHtml(winner.name)}">
         `;
-
-        const copyBtn = modalWinnerInfo.querySelector('.copy-btn');
-        if (copyBtn) {
-            copyBtn.addEventListener('click', (event) => {
-                const targetId = event.currentTarget.dataset.target;
-                const input = document.getElementById(targetId);
-                if (input) {
-                    copyToClipboard(input.value, event.currentTarget);
-                }
-            });
-        }
+        return item;
     };
 
-    const handleSaveMagnet = async (lotteryId, kinopoiskId, magnetLink) => {
-        if (!kinopoiskId) {
-            showToast('Не удалось определить ID фильма для сохранения magnet-ссылки.', 'error');
-            return;
-        }
-        try {
-            const response = await fetch('/api/movie-magnet', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kinopoisk_id: kinopoiskId, magnet_link: magnetLink }),
-            });
-            const data = await response.json();
-            showToast(data.message, data.success ? 'success' : 'error');
-            if (!response.ok || !data.success) {
-                return;
-            }
-            const refreshed = await fetchLotteryDetails(lotteryId);
-            renderLotteryDetails(refreshed);
-            if (refreshed.result) {
-                refreshCardActions(lotteryId, refreshed.result);
-            }
-        } catch (error) {
-            console.error('Ошибка при сохранении magnet-ссылки:', error);
-            showToast('Произошла критическая ошибка.', 'error');
-        }
-    };
+    const pollWaitingCards = async () => {
+        if (!waitingCards.size) return;
 
-    const handleDeleteLottery = async (lotteryId, cardElement) => {
-        try {
-            const response = await fetch(`/delete-lottery/${lotteryId}`, { method: 'POST' });
-            const data = await response.json();
-            showToast(data.message, response.ok && data.success ? 'success' : 'error');
-            if (response.ok && data.success) {
-                cardElement.classList.add('is-deleting');
-                removeDownload(lotteryId, cardElement.dataset.kinopoiskId);
-                if (waitingCards.has(lotteryId)) {
+        for (const [lotteryId, cardElement] of waitingCards.entries()) {
+            try {
+                const data = await fetchLotteryDetails(lotteryId);
+                if (data.result) {
+                    const newCard = createCompletedCard({ id: lotteryId, createdAt: data.createdAt }, data.result);
+                    cardElement.replaceWith(newCard);
                     waitingCards.delete(lotteryId);
+                    formatDateBadges(); // Обновляем дату на новой карточке
                 }
-                setTimeout(() => {
-                    cardElement.remove();
-                    formatDateBadges();
-                }, 300);
+            } catch (error) {
+                console.error(`Не удалось обновить лотерею ${lotteryId}:`, error);
+                waitingCards.delete(lotteryId); // Прекращаем попытки для этой карточки
             }
-        } catch (error) {
-            console.error('Ошибка при удалении лотереи:', error);
-            showToast('Не удалось удалить лотерею.', 'error');
         }
     };
 
-    const renderWinnerCard = (winner) => {
-        if (!modalWinnerInfo) return;
 
-        const ratingValue = Number.parseFloat(winner.rating_kp);
-        let ratingBadgeHtml = '';
-        if (!Number.isNaN(ratingValue)) {
-            const ratingClass = ratingValue >= 7 ? 'rating-high' : ratingValue >= 5 ? 'rating-medium' : 'rating-low';
-            ratingBadgeHtml = `<div class="rating-badge ${ratingClass}">${ratingValue.toFixed(1)}</div>`;
-        }
-
-        modalWinnerInfo.innerHTML = `
-            <div class="winner-card">
-                <div class="winner-poster">
-                    <img src="${escapeAttr(winner.poster || placeholderPoster)}" alt="Постер ${escapeHtml(winner.name)}">
-                    ${ratingBadgeHtml}
-                </div>
-                <div class="winner-details">
-                    <h2>${escapeHtml(winner.name)}${winner.year ? ` (${escapeHtml(winner.year)})` : ''}</h2>
-                    <p class="meta-info">${escapeHtml(winner.genres || 'н/д')} / ${escapeHtml(winner.countries || 'н/д')}</p>
-                    <p class="description">${escapeHtml(winner.description || 'Описание отсутствует.')}</p>
-                    <div class="magnet-form">
-                        <label for="magnet-input">Magnet-ссылка:</label>
-                        <input type="text" id="magnet-input" value="${escapeAttr(winner.magnet_link || '')}" placeholder="Вставьте magnet-ссылку и нажмите Сохранить...">
-                        <div class="magnet-actions">
-                            <button class="action-button save-magnet-btn">Сохранить</button>
-                            ${winner.has_magnet ? '<button class="action-button-delete delete-magnet-btn">Удалить ссылку</button>' : ''}
-                        </div>
-                    </div>
-                    <button class="secondary-button add-library-modal-btn">Добавить в библиотеку</button>
-                </div>
-            </div>
-        `;
-
-        const saveBtn = modalWinnerInfo.querySelector('.save-magnet-btn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', () => {
-                const input = modalWinnerInfo.querySelector('#magnet-input');
-                handleSaveMagnet(currentModalLotteryId, winner.kinopoisk_id, input ? input.value.trim() : '');
-            });
-        }
-
-        const deleteBtn = modalWinnerInfo.querySelector('.delete-magnet-btn');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => {
-                handleSaveMagnet(currentModalLotteryId, winner.kinopoisk_id, '');
-            });
-        }
-
-        const addToLibraryBtn = modalWinnerInfo.querySelector('.add-library-modal-btn');
-        if (addToLibraryBtn) {
-            addToLibraryBtn.addEventListener('click', () => {
-                addMovieToLibrary({
-                    lottery_id: currentModalLotteryId,
-                    kinopoisk_id: winner.kinopoisk_id || null,
-                    name: winner.name,
-                    year: winner.year,
-                    poster: winner.poster,
-                    description: winner.description,
-                    rating_kp: winner.rating_kp,
-                    genres: winner.genres,
-                    countries: winner.countries,
-                });
-            });
-        }
-    };
-
-    const renderLotteryDetails = (data) => {
-        renderParticipantsList(data.movies || [], data.result ? data.result.name : null);
-        if (data.result) {
-            renderWinnerCard(data.result);
-        } else {
-            if (modalParticipantsContainer) {
-                modalParticipantsContainer.style.display = 'none';
-            }
-            renderWaitingState(data);
-        }
-    };
-
-    const fetchLotteryDetails = async (lotteryId) => {
-        const response = await fetch(`/api/result/${lotteryId}`);
-        if (!response.ok) throw new Error('Ошибка сети');
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
-        return data;
-    };
-
-    const openModal = async (lotteryId) => {
-        if (!modalOverlay || !modalWinnerInfo) return;
-        currentModalLotteryId = lotteryId;
-        modalOverlay.style.display = 'flex';
-        document.body.classList.add('no-scroll');
-        modalWinnerInfo.innerHTML = '<div class="loader"></div>';
-        if (modalParticipantsContainer) {
-            modalParticipantsContainer.style.display = 'none';
-        }
-        if (modalParticipantsList) {
-            modalParticipantsList.innerHTML = '';
-        }
-
-        try {
-            const data = await fetchLotteryDetails(lotteryId);
-            renderLotteryDetails(data);
-            if (data.result) {
-                refreshCardActions(lotteryId, data.result);
-            }
-        } catch (error) {
-            modalWinnerInfo.innerHTML = `<p class="error-message">Не удалось загрузить детали: ${escapeHtml(error.message)}</p>`;
-        }
-    };
-
-    const handleSearchClick = (movieName, movieYear) => {
-        if (!movieName) return;
-        const parts = [movieName.trim()];
-        if (movieYear && movieYear.trim()) {
-            parts.push(`(${movieYear.trim()})`);
-        }
-        const query = encodeURIComponent(parts.join(' '));
-        window.open(`https://rutracker.org/forum/tracker.php?nm=${query}`, '_blank');
-    };
+    // --- НОВАЯ ЛОГИКА ДЛЯ МОДАЛЬНОГО ОКНА ---
 
     const handleDownloadClick = async (kinopoiskId, movieName, lotteryId) => {
         if (!kinopoiskId) {
@@ -852,114 +484,250 @@ document.addEventListener('DOMContentLoaded', () => {
             removeDownload(lotteryId, kinopoiskId);
         }
     };
+    
+    const handleDeleteLottery = async (lotteryId, cardElement) => {
+        try {
+            const response = await fetch(`/delete-lottery/${lotteryId}`, { method: 'POST' });
+            const data = await response.json();
+            
+            showToast(data.message, data.success ? 'success' : 'error');
 
-    const collectWaitingCards = (map) => {
-        if (!gallery) return;
-        map.clear();
-        gallery.querySelectorAll('.waiting-card').forEach((card) => {
-            const lotteryId = card.dataset.lotteryId;
-            if (lotteryId) {
-                map.set(lotteryId, card);
+            if (data.success) {
+                closeModal();
+                cardElement.classList.add('is-deleting');
+                removeDownload(lotteryId, cardElement.dataset.kinopoiskId);
+                cardElement.addEventListener('transitionend', () => cardElement.remove());
             }
-        });
+        } catch (error) {
+            showToast('Произошла критическая ошибка при удалении.', 'error');
+        }
     };
-
-    const createCompletedCard = (lotteryId, winner, createdAtIso) => {
-        const item = document.createElement('div');
-        item.className = 'gallery-item';
-        item.dataset.lotteryId = lotteryId;
-        item.dataset.kinopoiskId = winner.kinopoisk_id || '';
-        item.dataset.movieName = winner.name || '';
-        item.dataset.movieYear = winner.year || '';
-        item.dataset.moviePoster = winner.poster || '';
-        item.dataset.movieDescription = winner.description || '';
-        item.dataset.movieRating = winner.rating_kp != null ? winner.rating_kp : '';
-        item.dataset.movieGenres = winner.genres || '';
-        item.dataset.movieCountries = winner.countries || '';
-
-        item.innerHTML = `
-            <div class="action-buttons">
-                ${DOWNLOAD_BUTTON_HTML}
-                ${SEARCH_BUTTON_HTML}
-                ${DELETE_BUTTON_HTML}
-            </div>
-            <div class="date-badge" data-date="${escapeAttr(createdAtIso)}"></div>
-            <img src="${escapeAttr(winner.poster || placeholderPoster)}" alt="${escapeHtml(winner.name)}">
-        `;
-
-        updateCardMagnetState(item, {
-            hasMagnet: winner.has_magnet,
-            magnetLink: winner.magnet_link || '',
-            kinopoiskId: winner.kinopoisk_id,
-        });
-
-        return item;
-    };
-
-    const pollWaitingCards = (map) => async () => {
-        if (!map.size) return;
-
-        const tasks = Array.from(map.entries()).map(async ([lotteryId, cardElement]) => {
-            try {
-                const data = await fetchLotteryDetails(lotteryId);
-                if (data.result) {
-                    const newCard = createCompletedCard(lotteryId, data.result, data.createdAt);
-                    cardElement.replaceWith(newCard);
-                    refreshCardActions(lotteryId, data.result);
-                    map.delete(lotteryId);
-                    formatDateBadges();
-                } else if (modalOverlay && modalOverlay.style.display === 'flex' && currentModalLotteryId === lotteryId) {
-                    renderWaitingState(data);
-                }
-            } catch (error) {
-                console.error('Не удалось обновить лотерею', lotteryId, error);
-                map.delete(lotteryId);
-            }
-        });
-
-        await Promise.all(tasks);
-    };
-
-    if (gallery) {
-        gallery.addEventListener('click', (event) => {
-            const galleryItem = event.target.closest('.gallery-item');
-            if (!galleryItem) return;
-
-            const { lotteryId, kinopoiskId, movieName, movieYear } = galleryItem.dataset;
-            const actionButton = event.target.closest('button');
-            if (actionButton && galleryItem.contains(actionButton)) {
-                event.stopPropagation();
-
-                if (actionButton.disabled) {
-                    return;
-                }
-
-                if (actionButton.classList.contains('download-button')) {
-                    handleDownloadClick(kinopoiskId, movieName, lotteryId);
-                    return;
-                }
-
-                if (actionButton.classList.contains('search-button')) {
-                    handleSearchClick(movieName, movieYear);
-                    return;
-                }
-
-                if (actionButton.classList.contains('delete-button')) {
-                    handleDeleteLottery(lotteryId, galleryItem);
-                    return;
+    
+    const handleSaveMagnet = async (lotteryId, kinopoiskId, magnetLink) => {
+        if (!kinopoiskId) {
+            showToast('Не удалось определить ID фильма для сохранения.', 'error');
+            return;
+        }
+        try {
+            const response = await fetch('/api/movie-magnet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kinopoisk_id: kinopoiskId, magnet_link: magnetLink }),
+            });
+            const data = await response.json();
+            showToast(data.message, data.success ? 'success' : 'error');
+            
+            if (data.success) {
+                // Обновляем и модальное окно, и карточку в галерее
+                const refreshedData = await fetchLotteryDetails(lotteryId);
+                renderLotteryDetails(refreshedData);
+                
+                const card = gallery.querySelector(`.gallery-item[data-lottery-id="${lotteryId}"]`);
+                if (card) {
+                    card.dataset.hasMagnet = data.has_magnet ? 'true' : 'false';
+                    card.dataset.magnetLink = data.magnet_link || '';
+                    const downloadBtn = card.querySelector('.download-button');
+                    const searchBtn = card.querySelector('.search-button');
+                    if (downloadBtn) downloadBtn.hidden = !data.has_magnet;
+                    if (searchBtn) searchBtn.hidden = data.has_magnet;
                 }
             }
+        } catch (error) {
+            showToast('Произошла критическая ошибка при сохранении ссылки.', 'error');
+        }
+    };
+    
+    const addMovieToLibrary = async (moviePayload) => {
+        if (!moviePayload) return;
+        try {
+            const response = await fetch('/api/library', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ movie: moviePayload }),
+            });
+            const data = await response.json();
+            showToast(data.message, data.success ? 'success' : 'error');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    };
+    
+    const renderParticipantsList = (movies, winnerName) => {
+        if (!modalParticipantsContainer || !modalParticipantsList) return;
+        if (!movies || !movies.length) {
+            modalParticipantsContainer.style.display = 'none';
+            return;
+        }
 
-            openModal(lotteryId);
+        modalParticipantsList.innerHTML = '';
+        movies.forEach((movie) => {
+            const isWinner = movie.name === winnerName;
+            const li = document.createElement('li');
+            li.className = `participant-item ${isWinner ? 'winner' : ''}`;
+            li.innerHTML = `
+                <img class="participant-poster" src="${escapeAttr(movie.poster || placeholderPoster)}" alt="${escapeAttr(movie.name)}">
+                <span class="participant-name">${escapeHtml(movie.name)}</span>
+                <span class="participant-meta">${escapeHtml(movie.year || '')}</span>
+                ${isWinner ? '<span class="participant-winner-badge">Победитель</span>' : ''}
+            `;
+            modalParticipantsList.appendChild(li);
         });
-    }
+        modalParticipantsContainer.style.display = 'block';
+    };
+
+    const renderWinnerCard = (winner) => {
+        if (!modalWinnerInfo) return;
+
+        const ratingValue = parseFloat(winner.rating_kp);
+        let ratingBadgeHtml = '';
+        if (!isNaN(ratingValue)) {
+            const ratingClass = ratingValue >= 7 ? 'rating-high' : ratingValue >= 5 ? 'rating-medium' : 'rating-low';
+            ratingBadgeHtml = `<div class="rating-badge ${ratingClass}">${ratingValue.toFixed(1)}</div>`;
+        }
+
+        modalWinnerInfo.innerHTML = `
+            <div class="winner-card">
+                <div class="winner-poster">
+                    <img src="${escapeAttr(winner.poster || placeholderPoster)}" alt="Постер ${escapeAttr(winner.name)}">
+                    ${ratingBadgeHtml}
+                </div>
+                <div class="winner-details">
+                    <h2>${escapeHtml(winner.name)}${winner.year ? ` (${escapeHtml(winner.year)})` : ''}</h2>
+                    <p class="meta-info">${escapeHtml(winner.genres || 'н/д')} / ${escapeHtml(winner.countries || 'н/д')}</p>
+                    <p class="description">${escapeHtml(winner.description || 'Описание отсутствует.')}</p>
+                    <div class="magnet-form">
+                        <label for="magnet-input">Magnet-ссылка:</label>
+                        <input type="text" id="magnet-input" value="${escapeAttr(winner.magnet_link || '')}" placeholder="Вставьте magnet-ссылку и нажмите Сохранить...">
+                        <div class="magnet-actions">
+                            <button class="action-button save-magnet-btn">Сохранить</button>
+                            ${winner.has_magnet ? '<button class="action-button-delete delete-magnet-btn">Удалить ссылку</button>' : ''}
+                        </div>
+                    </div>
+                    <button class="secondary-button add-library-modal-btn">Добавить в библиотеку</button>
+                </div>
+            </div>`;
+    };
+
+    const renderLotteryDetails = (data) => {
+        if (data.result) {
+            renderWinnerCard(data.result);
+            renderParticipantsList(data.movies, data.result.name);
+
+            // Навешиваем обработчики на кнопки внутри модального окна
+            const saveBtn = modalWinnerInfo.querySelector('.save-magnet-btn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', () => {
+                    const input = modalWinnerInfo.querySelector('#magnet-input');
+                    handleSaveMagnet(currentModalLotteryId, data.result.kinopoisk_id, input.value.trim());
+                });
+            }
+
+            const deleteBtn = modalWinnerInfo.querySelector('.delete-magnet-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => {
+                    handleSaveMagnet(currentModalLotteryId, data.result.kinopoisk_id, '');
+                });
+            }
+
+            const addToLibraryBtn = modalWinnerInfo.querySelector('.add-library-modal-btn');
+            if (addToLibraryBtn) {
+                addToLibraryBtn.addEventListener('click', () => addMovieToLibrary(data.result));
+            }
+        } else {
+            // Если результата еще нет (для карточек в ожидании)
+            modalWinnerInfo.innerHTML = '<h3>Эта лотерея еще не завершена.</h3>';
+            renderParticipantsList(data.movies, null);
+        }
+    };
+    
+    const fetchLotteryDetails = async (lotteryId) => {
+        const response = await fetch(`/api/result/${lotteryId}`);
+        if (!response.ok) throw new Error('Ошибка сети');
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        return data;
+    };
+    
+    const openModal = async (lotteryId) => {
+        if (!modalOverlay || !modalWinnerInfo) return;
+        currentModalLotteryId = lotteryId;
+        modalOverlay.style.display = 'flex';
+        document.body.classList.add('no-scroll');
+        modalWinnerInfo.innerHTML = '<div class="loader"></div>';
+        if (modalParticipantsContainer) modalParticipantsContainer.style.display = 'none';
+
+        try {
+            const data = await fetchLotteryDetails(lotteryId);
+            renderLotteryDetails(data);
+        } catch (error) {
+            modalWinnerInfo.innerHTML = `<p class="error-message">Не удалось загрузить детали: ${escapeHtml(error.message)}</p>`;
+        }
+    };
 
     const closeModal = () => {
-        if (modalOverlay) {
-            modalOverlay.style.display = 'none';
-        }
+        if (modalOverlay) modalOverlay.style.display = 'none';
         document.body.classList.remove('no-scroll');
     };
+    
+    // --- ОБЩИЕ ФУНКЦИИ И ИНИЦИАЛИЗАЦИЯ ---
+
+    const formatDateBadges = () => {
+        if (!gallery) return;
+        const formatter = new Intl.DateTimeFormat('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        });
+
+        gallery.querySelectorAll('.date-badge').forEach((badge) => {
+            const iso = badge.dataset.date;
+            if (!iso) return;
+            const date = new Date(iso);
+            if (isNaN(date.getTime())) return;
+            badge.textContent = formatter.format(date);
+        });
+    };
+    
+    const initializeCardStates = () => {
+        if (!gallery) return;
+        gallery.querySelectorAll('.gallery-item:not(.waiting-card)').forEach((card) => {
+            const hasMagnet = card.dataset.hasMagnet === 'true';
+            const downloadBtn = card.querySelector('.download-button');
+            const searchBtn = card.querySelector('.search-button');
+            if(downloadBtn) downloadBtn.hidden = !hasMagnet;
+            if(searchBtn) searchBtn.hidden = hasMagnet;
+        });
+    };
+    
+    // --- ГЛАВНЫЙ ОБРАБОТЧИК КЛИКОВ НА ГАЛЕРЕЕ ---
+    if (gallery) {
+        gallery.addEventListener('click', (event) => {
+            const card = event.target.closest('.gallery-item');
+            if (!card) return;
+
+            const { lotteryId, kinopoiskId, movieName, movieYear, hasMagnet } = card.dataset;
+            const button = event.target.closest('.icon-button');
+
+            if (button) { // Клик был по кнопке
+                event.stopPropagation();
+
+                if (button.classList.contains('delete-button')) {
+                    handleDeleteLottery(lotteryId, card);
+                } else if (button.classList.contains('search-button')) {
+                    handleSearchClick(movieName, movieYear);
+                } else if (button.classList.contains('download-button')) {
+                    if (hasMagnet === 'true') {
+                       handleDownloadClick(kinopoiskId, movieName, lotteryId);
+                    } else {
+                       showToast('Сначала добавьте magnet-ссылку в деталях лотереи.', 'warning');
+                       openModal(lotteryId);
+                    }
+                }
+            } else { // Клик по самой карточке
+                openModal(lotteryId);
+            }
+        });
+    }
 
     if (closeButton) closeButton.addEventListener('click', closeModal);
     if (modalOverlay) {
@@ -969,33 +737,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (widgetHeader) {
-        widgetHeader.addEventListener('click', () => {
-            widget.classList.toggle('minimized');
-        });
+        widgetHeader.addEventListener('click', () => widget.classList.toggle('minimized'));
     }
-
     if (widgetToggleBtn) {
         widgetToggleBtn.addEventListener('click', (event) => {
             event.stopPropagation();
             widget.classList.toggle('minimized');
         });
     }
-
-    const waitingCards = new Map();
-    collectWaitingCards(waitingCards);
-
-    if (waitingCards.size) {
-        const poller = pollWaitingCards(waitingCards);
-        poller();
-        const waitingIntervalId = setInterval(() => {
-            if (!waitingCards.size) {
-                clearInterval(waitingIntervalId);
-                return;
+    
+    // --- ЗАПУСК ВСЕГО ПРИ ЗАГРУЗКЕ СТРАНИЦЫ ---
+    
+    formatDateBadges();
+    initializeCardStates();
+    
+    // Логика для карточек в ожидании
+    collectWaitingCards();
+    if (waitingCards.size > 0) {
+        const poller = () => pollWaitingCards();
+        poller(); // Запускаем сразу
+        const pollIntervalId = setInterval(() => {
+            if (waitingCards.size === 0) {
+                clearInterval(pollIntervalId);
+            } else {
+                poller();
             }
-            poller();
         }, 5000);
     }
-
+    
+    // Логика виджета
     initializeStoredDownloads();
     ensureWidgetState();
     syncExternalDownloads();
@@ -1003,6 +773,4 @@ document.addEventListener('DOMContentLoaded', () => {
         setInterval(syncExternalDownloads, 5000);
         window.addEventListener('focus', syncExternalDownloads);
     }
-    initializeCardMagnetStates();
-    formatDateBadges();
 });
