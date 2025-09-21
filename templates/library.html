@@ -26,6 +26,7 @@
                 <div
                     class="gallery-item library-card"
                     data-movie-id="{{ movie.id }}"
+                    data-kinopoisk-id="{{ movie.kinopoisk_id or '' }}"
                     data-movie-name="{{ movie.name|e }}"
                     data-movie-year="{{ movie.year or '' }}"
                     data-movie-poster="{{ (movie.poster or '')|e }}"
@@ -34,8 +35,11 @@
                     data-movie-genres="{{ (movie.genres|default('', true))|e }}"
                     data-movie-countries="{{ (movie.countries|default('', true))|e }}"
                     data-added-at="{{ movie.added_at.isoformat() }}"
+                    data-has-magnet="{{ 'true' if movie.has_magnet else 'false' }}"
+                    data-magnet-link="{{ (movie.magnet_link or '')|e }}"
                 >
                     <div class="action-buttons">
+                        <button class="action-button download-button" title="Скачать торрент">&#x2913;</button>
                         <button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>
                         <button class="action-button-delete delete-button" title="Удалить из библиотеки">&times;</button>
                     </div>
@@ -52,6 +56,17 @@
         <div class="modal-content">
             <span class="close-button">&times;</span>
             <div id="library-modal-body"></div>
+        </div>
+    </div>
+
+    <div id="torrent-status-widget" class="status-widget" style="display: none;">
+        <div class="widget-header">
+            <h4>Статус загрузки</h4>
+            <button id="widget-toggle-btn" class="widget-toggle-btn">&mdash;</button>
+        </div>
+        <div id="widget-body" class="widget-body">
+            <p class="widget-empty">Активных загрузок нет.</p>
+            <div id="widget-downloads"></div>
         </div>
     </div>
 

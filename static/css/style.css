@@ -317,24 +317,19 @@ button:disabled {
 .gallery-item:hover img { transform: scale(1.05); filter: brightness(1.1); }
 .date-badge {
     position: absolute;
-    top: 48px;
-    right: 8px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 20px;
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
+    bottom: 12px;
+    right: 12px;
+    display: inline-block;
+    color: rgba(248, 249, 250, 0.85);
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.3px;
     transition: opacity 0.3s ease;
     pointer-events: none;
     z-index: 2;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 .gallery-item:hover .date-badge, .waiting-card:hover .date-badge { opacity: 0; }
-.date-badge .calendar-icon { font-size: 15px; }
 .no-history { grid-column: 1 / -1; text-align: center; font-size: 1.2em; color: #adb5bd; padding: 50px; }
 .waiting-card { background-color: #2b2b2b; display: flex; justify-content: center; align-items: center; text-align: center; color: #adb5bd; transition: background-color 0.4s; }
 .waiting-card:hover { background-color: #343a40; }
@@ -342,7 +337,7 @@ button:disabled {
 .waiting-card.is-updating .waiting-content { opacity: 0; }
 .waiting-content .loader-small { border: 3px solid #6c757d; border-top: 3px solid var(--primary-color); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
 .waiting-content span { font-weight: 700; }
-.waiting-card .date-badge { top: 12px; }
+.waiting-card .date-badge { bottom: 12px; }
 
 
 

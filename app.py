@@ -228,6 +228,10 @@ def history():
 @app.route('/library')
 def library():
     library_movies = LibraryMovie.query.order_by(LibraryMovie.added_at.desc()).all()
+    for movie in library_movies:
+        identifier = MovieIdentifier.query.get(movie.kinopoisk_id) if movie.kinopoisk_id else None
+        movie.has_magnet = bool(identifier)
+        movie.magnet_link = identifier.magnet_link if identifier else ''
     return render_template(
         'library.html',
         library_movies=library_movies,
@@ -454,6 +458,34 @@ def start_download(kinopoisk_id):
     except Exception as e:
         return jsonify({"success": False, "message": f"Ошибка qBittorrent: {e}"}), 500
 
+
+@app.route('/api/library/start-download/<int:movie_id>', methods=['POST'])
+def start_library_download(movie_id):
+    library_movie = LibraryMovie.query.get_or_404(movie_id)
+    if not library_movie.kinopoisk_id:
+        return jsonify({"success": False, "message": "Для фильма не указан kinopoisk_id."}), 400
+
+    identifier = MovieIdentifier.query.get(library_movie.kinopoisk_id)
+    if not identifier or not identifier.magnet_link:
+        return jsonify({"success": False, "message": "Magnet-ссылка не найдена."}), 400
+
+    category = f"library-{movie_id}"
+
+    try:
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+        qbt_client.auth_log_in()
+        qbt_client.torrents_add(
+            urls=identifier.magnet_link,
+            category=category,
+            is_sequential_download=True,
+            is_first_last_piece_priority=True,
+        )
+        qbt_client.auth_log_out()
+        return jsonify({"success": True, "message": "Загрузка началась!"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Ошибка qBittorrent: {e}"}), 500
+
+
 # --- ОБНОВЛЕННЫЙ СТАТУС ТОРРЕНТА ---
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
@@ -479,6 +511,37 @@ def get_torrent_status(lottery_id):
         if qbt_client:
             try: qbt_client.auth_log_out()
             except: pass
+
+
+@app.route('/api/library/torrent-status/<int:movie_id>')
+def get_library_torrent_status(movie_id):
+    qbt_client = None
+    try:
+        qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
+        qbt_client.auth_log_in()
+        torrents = qbt_client.torrents_info(category=f"library-{movie_id}")
+        if not torrents:
+            return jsonify({"status": "not_found"})
+
+        torrent = torrents[0]
+        return jsonify({
+            "status": torrent.state,
+            "progress": f"{torrent.progress * 100:.1f}",
+            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}",
+            "name": torrent.name,
+            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м",
+            "seeds": torrent.num_seeds,
+            "peers": torrent.num_leechs,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+    finally:
+        if qbt_client:
+            try:
+                qbt_client.auth_log_out()
+            except:  # noqa: E722
+                pass
+
 
 # --- Служебные маршруты ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
