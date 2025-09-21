@@ -104,7 +104,18 @@ def generate_unique_id(length=6):
 
 def get_background_photos():
     try:
-        return BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
+        photos = BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
+        # Преобразуем список объектов в список словарей
+        return [
+            {
+                "poster_url": photo.poster_url,
+                "pos_top": photo.pos_top,
+                "pos_left": photo.pos_left,
+                "rotation": photo.rotation,
+                "z_index": photo.z_index,
+            }
+            for photo in photos
+        ]
     except ProgrammingError:
         return []
 
