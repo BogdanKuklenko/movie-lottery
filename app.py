@@ -219,6 +219,7 @@ def history():
     return render_template(
         'history.html',
         lotteries=lotteries,
+
         identifiers=identifiers,
         background_photos=get_background_photos()
     )
@@ -227,14 +228,9 @@ def history():
 @app.route('/library')
 def library():
     library_movies = LibraryMovie.query.order_by(LibraryMovie.added_at.desc()).all()
-    identifiers = {}
-    for movie in library_movies:
-        if movie.kinopoisk_id and movie.kinopoisk_id not in identifiers:
-            identifiers[movie.kinopoisk_id] = MovieIdentifier.query.get(movie.kinopoisk_id)
     return render_template(
         'library.html',
         library_movies=library_movies,
-        identifiers=identifiers,
         background_photos=get_background_photos()
     )
 
@@ -320,7 +316,6 @@ def add_library_movie():
 
     message = "Фильм добавлен в библиотеку."
 
-    poster_after_update = None
 
     if existing:
         existing.name = name
@@ -337,7 +332,7 @@ def add_library_movie():
         if kinopoisk_id: existing.kinopoisk_id = kinopoisk_id
         existing.added_at = datetime.utcnow()
         message = "Информация о фильме обновлена в библиотеке."
-        poster_after_update = existing.poster
+
     else:
         rating_value = None
         raw_rating = movie_data.get('rating_kp')
@@ -358,10 +353,6 @@ def add_library_movie():
             countries=movie_data.get('countries'),
         )
         db.session.add(new_movie)
-        poster_after_update = new_movie.poster
-
-    if poster_after_update:
-        ensure_background_photo(poster_after_update)
 
     db.session.commit()
     return jsonify({"success": True, "message": message})
