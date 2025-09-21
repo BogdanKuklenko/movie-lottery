@@ -11,6 +11,7 @@
     --rating-high: #28a745; /* Зеленый для высокого рейтинга */
     --rating-medium: #fd7e14; /* Оранжевый для среднего */
     --rating-low: #6c757d; /* Серый для низкого */
+    --action-icon-color: #f1f5ff; /* Единый цвет иконок действий */
 }
 
 html {
@@ -359,11 +360,8 @@ button:disabled {
     backdrop-filter: blur(8px);
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
     transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    color: var(--action-icon-color);
 }
-
-.action-buttons .icon-button.download-button { color: #44dac4; }
-.action-buttons .icon-button.search-button { color: #f7c654; }
-.action-buttons .icon-button.delete-button { color: #ff7b7b; }
 
 .action-buttons .icon-button:focus-visible {
     outline: 2px solid rgba(255, 255, 255, 0.85);

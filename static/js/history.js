@@ -446,6 +446,94 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const ensureDownloadButton = (buttons) => {
+        if (!buttons) return null;
+        let downloadBtn = buttons.querySelector('.download-button');
+        if (!downloadBtn) {
+            downloadBtn = document.createElement('button');
+            downloadBtn.type = 'button';
+            downloadBtn.className = 'icon-button download-button';
+            downloadBtn.title = 'Скачать фильм';
+            downloadBtn.setAttribute('aria-label', 'Скачать фильм');
+            downloadBtn.innerHTML = ICON_SVG.download;
+            buttons.prepend(downloadBtn);
+        }
+        return downloadBtn;
+    };
+
+    const ensureSearchButton = (buttons) => {
+        if (!buttons) return null;
+        let searchBtn = buttons.querySelector('.search-button');
+        if (!searchBtn) {
+            searchBtn = document.createElement('button');
+            searchBtn.type = 'button';
+            searchBtn.className = 'icon-button search-button';
+            searchBtn.title = 'Искать торрент';
+            searchBtn.setAttribute('aria-label', 'Искать торрент');
+            searchBtn.innerHTML = ICON_SVG.search;
+            const deleteBtn = buttons.querySelector('.delete-button');
+            if (deleteBtn) {
+                buttons.insertBefore(searchBtn, deleteBtn);
+            } else {
+                buttons.appendChild(searchBtn);
+            }
+        }
+        return searchBtn;
+    };
+
+    const updateCardMagnetState = (card, { hasMagnet, magnetLink, kinopoiskId } = {}) => {
+        if (!card) return;
+
+        if (kinopoiskId !== undefined) {
+            card.dataset.kinopoiskId = kinopoiskId ? String(kinopoiskId) : '';
+        }
+
+        const normalized = Boolean(hasMagnet);
+        card.dataset.hasMagnet = normalized ? 'true' : 'false';
+        card.dataset.magnetLink = magnetLink || '';
+
+        const buttons = card.querySelector('.action-buttons');
+        if (!buttons) return;
+
+        const downloadBtn = ensureDownloadButton(buttons);
+        const searchBtn = ensureSearchButton(buttons);
+        const hasKinopoisk = Boolean(card.dataset.kinopoiskId);
+
+        if (downloadBtn) {
+            downloadBtn.hidden = !normalized;
+            if (normalized && !hasKinopoisk) {
+                downloadBtn.setAttribute('disabled', 'disabled');
+                downloadBtn.title = 'Для этого фильма не указан kinopoisk_id';
+            } else if (normalized) {
+                downloadBtn.removeAttribute('disabled');
+                downloadBtn.title = 'Скачать фильм';
+            } else {
+                downloadBtn.removeAttribute('disabled');
+                downloadBtn.title = 'Скачать фильм';
+            }
+        }
+
+        if (searchBtn) {
+            searchBtn.hidden = normalized;
+            if (!normalized) {
+                searchBtn.title = 'Искать торрент';
+            }
+        }
+    };
+
+    const initializeCardMagnetStates = () => {
+        if (!gallery) return;
+        gallery.querySelectorAll('.gallery-item').forEach((card) => {
+            if (card.classList.contains('waiting-card')) return;
+            const hasMagnet = card.dataset.hasMagnet === 'true';
+            updateCardMagnetState(card, {
+                hasMagnet,
+                magnetLink: card.dataset.magnetLink || '',
+                kinopoiskId: card.dataset.kinopoiskId,
+            });
+        });
+    };
+
     const refreshCardActions = (lotteryId, winner) => {
         if (!gallery) return;
         const card = gallery.querySelector(`.gallery-item[data-lottery-id="${lotteryId}"]`);
@@ -462,49 +550,11 @@ document.addEventListener('DOMContentLoaded', () => {
             card.dataset.movieCountries = winner.countries || '';
         }
 
-        const buttons = card.querySelector('.action-buttons');
-        if (!buttons) return;
-
-        const existingDownloadBtn = buttons.querySelector('.download-button');
-        const existingSearchBtn = buttons.querySelector('.search-button');
-
-        if (winner && winner.has_magnet) {
-            if (existingSearchBtn) {
-                const downloadBtn = document.createElement('button');
-                downloadBtn.type = 'button';
-                downloadBtn.className = 'icon-button download-button';
-                downloadBtn.title = 'Скачать фильм';
-                downloadBtn.setAttribute('aria-label', 'Скачать фильм');
-                downloadBtn.innerHTML = ICON_SVG.download;
-                buttons.replaceChild(downloadBtn, existingSearchBtn);
-            } else if (!existingDownloadBtn) {
-                const downloadBtn = document.createElement('button');
-                downloadBtn.type = 'button';
-                downloadBtn.className = 'icon-button download-button';
-                downloadBtn.title = 'Скачать фильм';
-                downloadBtn.setAttribute('aria-label', 'Скачать фильм');
-                downloadBtn.innerHTML = ICON_SVG.download;
-                buttons.insertBefore(downloadBtn, buttons.firstChild);
-            }
-        } else {
-            if (existingDownloadBtn) {
-                const searchBtn = document.createElement('button');
-                searchBtn.type = 'button';
-                searchBtn.className = 'icon-button search-button';
-                searchBtn.title = 'Искать торрент';
-                searchBtn.setAttribute('aria-label', 'Искать торрент');
-                searchBtn.innerHTML = ICON_SVG.search;
-                buttons.replaceChild(searchBtn, existingDownloadBtn);
-            } else if (!existingSearchBtn) {
-                const searchBtn = document.createElement('button');
-                searchBtn.type = 'button';
-                searchBtn.className = 'icon-button search-button';
-                searchBtn.title = 'Искать торрент';
-                searchBtn.setAttribute('aria-label', 'Искать торрент');
-                searchBtn.innerHTML = ICON_SVG.search;
-                buttons.insertBefore(searchBtn, buttons.firstChild);
-            }
-        }
+        updateCardMagnetState(card, {
+            hasMagnet: winner ? winner.has_magnet : false,
+            magnetLink: winner && winner.magnet_link ? winner.magnet_link : '',
+            kinopoiskId: winner ? winner.kinopoisk_id : undefined,
+        });
     };
 
     const copyToClipboard = async (value, feedbackTarget) => {
@@ -746,6 +796,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!modalOverlay || !modalWinnerInfo) return;
         currentModalLotteryId = lotteryId;
         modalOverlay.style.display = 'flex';
+        document.body.classList.add('no-scroll');
         modalWinnerInfo.innerHTML = '<div class="loader"></div>';
         if (modalParticipantsContainer) {
             modalParticipantsContainer.style.display = 'none';
@@ -823,16 +874,21 @@ document.addEventListener('DOMContentLoaded', () => {
         item.dataset.movieGenres = winner.genres || '';
         item.dataset.movieCountries = winner.countries || '';
 
-        const actionButtonHtml = winner.has_magnet ? DOWNLOAD_BUTTON_HTML : SEARCH_BUTTON_HTML;
-
         item.innerHTML = `
             <div class="action-buttons">
-                ${actionButtonHtml}
+                ${DOWNLOAD_BUTTON_HTML}
+                ${SEARCH_BUTTON_HTML}
                 ${DELETE_BUTTON_HTML}
             </div>
             <div class="date-badge" data-date="${escapeAttr(createdAtIso)}"></div>
             <img src="${escapeAttr(winner.poster || placeholderPoster)}" alt="${escapeHtml(winner.name)}">
         `;
+
+        updateCardMagnetState(item, {
+            hasMagnet: winner.has_magnet,
+            magnetLink: winner.magnet_link || '',
+            kinopoiskId: winner.kinopoisk_id,
+        });
 
         return item;
     };
@@ -870,6 +926,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (actionButton && galleryItem.contains(actionButton)) {
                 event.stopPropagation();
 
+                if (actionButton.disabled) {
+                    return;
+                }
+
                 if (actionButton.classList.contains('download-button')) {
                     handleDownloadClick(kinopoiskId, movieName, lotteryId);
                     return;
@@ -894,6 +954,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modalOverlay) {
             modalOverlay.style.display = 'none';
         }
+        document.body.classList.remove('no-scroll');
     };
 
     if (closeButton) closeButton.addEventListener('click', closeModal);
@@ -938,5 +999,6 @@ document.addEventListener('DOMContentLoaded', () => {
         setInterval(syncExternalDownloads, 5000);
         window.addEventListener('focus', syncExternalDownloads);
     }
+    initializeCardMagnetStates();
     formatDateBadges();
 });
