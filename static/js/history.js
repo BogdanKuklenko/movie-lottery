@@ -695,6 +695,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok && data.success) {
                 cardElement.classList.add('is-deleting');
                 removeDownload(lotteryId, cardElement.dataset.kinopoiskId);
+                if (waitingCards.has(lotteryId)) {
+                    waitingCards.delete(lotteryId);
+                }
                 setTimeout(() => {
                     cardElement.remove();
                     formatDateBadges();
@@ -910,6 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (error) {
                 console.error('Не удалось обновить лотерею', lotteryId, error);
+                map.delete(lotteryId);
             }
         });
 
