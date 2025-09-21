@@ -23,7 +23,9 @@
             {% if lottery.result_name %}
                 {# --- КАРТОЧКА ДЛЯ ЗАВЕРШЕННОЙ ЛОТЕРЕИ --- #}
                 {% set winner_movie = lottery.movies|selectattr('name', 'equalto', lottery.result_name)|first %}
-                {% set identifier = db.session.query(MovieIdentifier).get(winner_movie.kinopoisk_id) if winner_movie else None %}
+                
+                {# ИЗМЕНЕНИЕ: Теперь мы берем информацию из словаря 'identifiers' #}
+                {% set has_identifier = winner_movie and winner_movie.kinopoisk_id in identifiers and identifiers[winner_movie.kinopoisk_id] is not none %}
 
                 <div class="gallery-item" 
                      data-lottery-id="{{ lottery.id }}" 
@@ -31,7 +33,8 @@
                      data-movie-name="{{ lottery.result_name }}"
                      data-movie-year="{{ lottery.result_year }}">
                     <div class="action-buttons">
-                        {% if identifier %}
+                        {# ИЗМЕНЕНИЕ: Проверяем наличие идентификатора в словаре #}
+                        {% if has_identifier %}
                             <button class="action-button download-button" title="Скачать фильм">&#x2913;</button>
                         {% else %}
                             <button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>

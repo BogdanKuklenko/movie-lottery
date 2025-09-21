@@ -168,7 +168,32 @@ def wait_for_result(lottery_id):
 
 @app.route('/history')
 def history():
-    return render_template('history.html', lotteries=Lottery.query.order_by(Lottery.created_at.desc()).all(), background_photos=get_background_photos())
+    lotteries = Lottery.query.order_by(Lottery.created_at.desc()).all()
+    
+    # Создаем словарь для хранения информации о наличии magnet-ссылок
+    # Ключ: kinopoisk_id, Значение: объект MovieIdentifier (если найден)
+    identifiers = {}
+    
+    for lottery in lotteries:
+        if lottery.result_name:
+            # Находим фильм-победитель в списке фильмов лотереи
+            winner_movie = next((m for m in lottery.movies if m.name == lottery.result_name), None)
+            
+            # Если победитель найден и у него есть kinopoisk_id
+            if winner_movie and winner_movie.kinopoisk_id:
+                # Проверяем, не искали ли мы уже информацию для этого фильма
+                if winner_movie.kinopoisk_id not in identifiers:
+                    # Если не искали, делаем запрос в БД и сохраняем результат
+                    identifier = MovieIdentifier.query.get(winner_movie.kinopoisk_id)
+                    identifiers[winner_movie.kinopoisk_id] = identifier
+
+    # Передаем в шаблон и лотереи, и словарь с magnet-ссылками
+    return render_template(
+        'history.html', 
+        lotteries=lotteries, 
+        identifiers=identifiers,
+        background_photos=get_background_photos()
+    )
 
 @app.route('/l/<lottery_id>')
 def play_lottery(lottery_id):
