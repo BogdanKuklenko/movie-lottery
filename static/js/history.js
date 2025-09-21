@@ -18,55 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeDownloads = new Map();
 
 
-    const getOrCreateDownloadElement = (lotteryId) => {
-        if (!widgetDownloadsContainer) return null;
-        let item = widgetDownloadsContainer.querySelector(`[data-lottery-id="${lotteryId}"]`);
-        if (!item) {
-            item = document.createElement('div');
-            item.className = 'widget-download';
-            item.dataset.lotteryId = lotteryId;
-            item.innerHTML = `
-                <h5 class="widget-download-title"></h5>
-                <div class="progress-bar-container">
-                    <div class="progress-bar"></div>
-                </div>
-                <div class="widget-stats">
-                    <span class="progress-text">0%</span>
-                    <span class="speed-text">0.00 МБ/с</span>
-                    <span class="eta-text">--:--</span>
-                </div>
-                <div class="widget-stats-bottom">
-                    <span class="peers-text">Сиды: 0 / Пиры: 0</span>
-                </div>
-            `;
-            widgetDownloadsContainer.appendChild(item);
-        }
-        return item;
-    };
-
-    const registerDownload = (lotteryId, movieName, kinopoiskId, { skipSave = false } = {}) => {
-        if (!lotteryId) return;
-        const existing = activeDownloads.get(lotteryId) || {};
-        const updated = {
-            lotteryId,
-            movieName: movieName || existing.movieName || 'Загрузка...',
-            kinopoiskId: kinopoiskId || existing.kinopoiskId || null,
-        };
-        activeDownloads.set(lotteryId, updated);
-
-        const element = getOrCreateDownloadElement(lotteryId);
-        if (element) {
-            const title = element.querySelector('.widget-download-title');
-            if (title) {
-                title.textContent = `Загрузка: ${updated.movieName}`;
-            }
-        }
-
-        ensureWidgetState();
-        if (!skipSave) saveActiveDownloads();
-        return updated;
-    };
-
     const removeDownload = (lotteryId) => {
         if (pollIntervals.has(lotteryId)) {
             clearInterval(pollIntervals.get(lotteryId));
@@ -180,21 +131,6 @@ document.addEventListener('DOMContentLoaded', () => {
         poll();
         const intervalId = setInterval(poll, 3000);
         pollIntervals.set(lotteryId, intervalId);
-    };
-
-    const initializeStoredDownloads = () => {
-        if (!widget) return;
-        try {
-            const stored = JSON.parse(localStorage.getItem(ACTIVE_DOWNLOADS_KEY) || '[]');
-            stored.forEach((entry) => {
-                if (!entry || !entry.lotteryId) return;
-                startTorrentStatusPolling(entry.lotteryId, entry.movieName, entry.kinopoiskId);
-            });
-        } catch (error) {
-            console.warn('Не удалось восстановить активные загрузки:', error);
-            localStorage.removeItem(ACTIVE_DOWNLOADS_KEY);
-        }
-    };
 
     if (widgetHeader) {
         widgetHeader.addEventListener('click', () => {
@@ -522,6 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.innerHTML = `
             <div class="action-buttons">
                 ${actionButton}
+
 
         return item;
     };

@@ -28,9 +28,20 @@ class _FakeDownloadClient(_BaseFakeClient):
         _FakeDownloadClient.last_category = category
         return []
 
-    def torrents_add(self, urls=None, category=None, is_sequential=None):
+    def torrents_add(
+        self,
+        urls=None,
+        category=None,
+        is_sequential_download=None,
+        is_first_last_piece_priority=None,
+    ):
         _FakeDownloadClient.added.append(
-            {"urls": urls, "category": category, "is_sequential": is_sequential}
+            {
+                "urls": urls,
+                "category": category,
+                "is_sequential_download": is_sequential_download,
+                "is_first_last_piece_priority": is_first_last_piece_priority,
+            }
         )
 
 
@@ -85,13 +96,11 @@ def test_start_download_calls_search_helper(monkeypatch, app_module):
     assert "началась" in payload["message"]
 
     assert searched_queries == ["Мы, нижеподписавшиеся 1980"]
-    assert _FakeDownloadClient.added == [
-        {
-
-            "category": "lottery-movie1",
-            "is_sequential": "true",
-        }
-    ]
+    assert len(_FakeDownloadClient.added) == 1
+    added_entry = _FakeDownloadClient.added[0]
+    assert added_entry["category"] == "lottery-movie1"
+    assert added_entry["is_sequential_download"] is True
+    assert added_entry["is_first_last_piece_priority"] is True
     assert _FakeDownloadClient.last_category == "lottery-movie1"
 
 

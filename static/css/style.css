@@ -344,67 +344,7 @@ button:disabled {
 .waiting-content span { font-weight: 700; }
 .waiting-card .date-badge { top: 12px; }
 
-.library-grid { margin-top: 10px; }
-.library-card {
-    position: relative;
-    overflow: hidden;
-    border-radius: 8px;
-    background: #1e1e1e;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.45);
-    transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
-}
-.library-card:hover { transform: translateY(-6px); box-shadow: 0 12px 25px rgba(0,0,0,0.6); }
-.library-card.is-deleting { opacity: 0; transform: scale(0.95); }
-.library-card img {
-    width: 100%;
-    height: auto;
-    display: block;
-}
-.library-card-info {
-    padding: 15px;
-    text-align: left;
-}
-.library-card-info h3 {
-    margin: 0 0 6px;
-    font-size: 18px;
-    color: var(--primary-color);
-}
-.library-meta { margin: 0 0 8px; color: #ced4da; font-weight: 600; }
-.library-rating {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 12px;
-    background-color: rgba(40, 167, 69, 0.2);
-    color: #28a745;
-    font-weight: 700;
-    margin-bottom: 10px;
-}
-.library-extra { margin: 0 0 10px; color: #adb5bd; font-size: 14px; }
-.library-description {
-    margin: 0;
-    font-size: 13px;
-    color: #bbb;
-    line-height: 1.4;
-    max-height: 120px;
-    overflow-y: auto;
-}
-.library-card-actions {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-}
-.library-remove-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: none;
-    background-color: rgba(0,0,0,0.6);
-    color: white;
-    font-size: 20px;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-}
-.library-remove-btn:hover { background-color: var(--danger-color); }
+
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(5px); }
 .modal-content {

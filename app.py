@@ -133,6 +133,24 @@ def get_background_photos():
     except ProgrammingError:
         return []
 
+
+def ensure_background_photo(poster_url):
+    if not poster_url:
+        return
+
+    if BackgroundPhoto.query.filter_by(poster_url=poster_url).first():
+        return
+
+    max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
+    new_photo = BackgroundPhoto(
+        poster_url=poster_url,
+        pos_top=random.uniform(5, 65),
+        pos_left=random.uniform(5, 75),
+        rotation=random.randint(-30, 30),
+        z_index=max_z_index + 1,
+    )
+    db.session.add(new_photo)
+
 # --- Маршруты ---
 @app.route('/')
 def index():
@@ -164,14 +182,10 @@ def create_lottery():
         )
         db.session.add(new_movie)
     
-    max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
     for movie_data in movies_json:
         if poster := movie_data.get('poster'):
-            if not BackgroundPhoto.query.filter_by(poster_url=poster).first():
-                max_z_index += 1
-                new_photo = BackgroundPhoto(poster_url=poster, pos_top=random.uniform(5, 65), pos_left=random.uniform(5, 75), rotation=random.randint(-30, 30), z_index=max_z_index)
-                db.session.add(new_photo)
-    
+            ensure_background_photo(poster)
+
     db.session.commit()
     return jsonify({"wait_url": url_for('wait_for_result', lottery_id=new_lottery.id)})
 
@@ -205,6 +219,7 @@ def history():
     return render_template(
         'history.html',
         lotteries=lotteries,
+
         identifiers=identifiers,
         background_photos=get_background_photos()
     )
@@ -301,6 +316,7 @@ def add_library_movie():
 
     message = "Фильм добавлен в библиотеку."
 
+
     if existing:
         existing.name = name
         if movie_data.get('poster'): existing.poster = movie_data['poster']
@@ -316,6 +332,7 @@ def add_library_movie():
         if kinopoisk_id: existing.kinopoisk_id = kinopoisk_id
         existing.added_at = datetime.utcnow()
         message = "Информация о фильме обновлена в библиотеке."
+
     else:
         rating_value = None
         raw_rating = movie_data.get('rating_kp')
@@ -392,6 +409,8 @@ def save_movie_magnet():
         return jsonify({"success": False, "message": "Отсутствует ID фильма"}), 400
 
     identifier = MovieIdentifier.query.get(kinopoisk_id)
+    magnet_link = (magnet_link or '').strip()
+
     if magnet_link:
         if identifier:
             identifier.magnet_link = magnet_link
@@ -404,9 +423,15 @@ def save_movie_magnet():
         message = "Magnet-ссылка удалена."
     else:
         message = "Действий не требуется."
-        
+
     db.session.commit()
-    return jsonify({"success": True, "message": message})
+    refreshed_identifier = MovieIdentifier.query.get(kinopoisk_id)
+    return jsonify({
+        "success": True,
+        "message": message,
+        "has_magnet": bool(refreshed_identifier),
+        "magnet_link": refreshed_identifier.magnet_link if refreshed_identifier else "",
+    })
 
 
 @app.route('/api/start-download/<int:kinopoisk_id>', methods=['POST'])
@@ -418,8 +443,12 @@ def start_download(kinopoisk_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        # ИЗМЕНЕНИЕ: Заменяем 'is_sequential' на правильный параметр 'sequential=True'
-        qbt_client.torrents_add(urls=identifier.magnet_link, category=category, sequential=True)
+        qbt_client.torrents_add(
+            urls=identifier.magnet_link,
+            category=category,
+            is_sequential_download=True,
+            is_first_last_piece_priority=True,
+        )
         qbt_client.auth_log_out()
         return jsonify({"success": True, "message": "Загрузка началась!"})
     except Exception as e:

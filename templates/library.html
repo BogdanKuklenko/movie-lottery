@@ -20,33 +20,14 @@
         </div>
     </header>
 
-    <div class="history-gallery library-grid">
-        {% if library_movies %}
-            {% for movie in library_movies %}
-                <div class="library-card" data-movie-id="{{ movie.id }}">
-                    <div class="library-card-actions">
-                        <button class="action-button-delete library-remove-btn" title="Удалить из библиотеки">&times;</button>
-                    </div>
-                    <img src="{{ movie.poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ movie.name }}">
-                    <div class="library-card-info">
-                        <h3>{{ movie.name }}</h3>
-                        <p class="library-meta">{{ movie.year or 'Год неизвестен' }}</p>
-                        {% if movie.rating_kp %}
-                            <span class="library-rating">KP: {{ '%.1f'|format(movie.rating_kp) }}</span>
-                        {% endif %}
-                        {% if movie.genres or movie.countries %}
-                            <p class="library-extra">{{ movie.genres or 'Жанр неизвестен' }}{% if movie.countries %} / {{ movie.countries }}{% endif %}</p>
-                        {% endif %}
-                        {% if movie.description %}
-                            <p class="library-description">{{ movie.description }}</p>
-                        {% endif %}
-                    </div>
+
                 </div>
             {% endfor %}
         {% else %}
             <p class="no-history">В библиотеке пока нет фильмов.</p>
         {% endif %}
     </div>
+
 
     <script src="{{ url_for('static', filename='js/library.js') }}"></script>
     <script>
