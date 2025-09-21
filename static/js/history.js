@@ -25,9 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
     const escapeHtml = (value) => {
-        if (value === null || value === undefined) {
-            return '';
-        }
+        if (value === null || value === undefined) return '';
         return String(value)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -37,9 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const escapeAttr = (value) => {
-        if (value === null || value === undefined) {
-            return '';
-        }
+        if (value === null || value === undefined) return '';
         return String(value)
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;');
@@ -481,10 +477,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>
                     <button class="secondary-button add-library-modal-btn">Добавить в библиотеку</button>
+                    
+                    <div class="slide-to-delete-container ${winner.is_on_client ? '' : 'disabled'}" data-torrent-hash="${escapeAttr(winner.torrent_hash || '')}">
+                        <div class="slide-to-delete-track">
+                            <div class="slide-to-delete-fill"></div>
+                            <span class="slide-to-delete-text">Удалить с клиента</span>
+                            <div class="slide-to-delete-thumb">&gt;</div>
+                        </div>
+                    </div>
                 </div>
             </div>`;
     };
-    
+
     const renderLotteryDetails = (data) => {
         renderParticipantsList(data.movies, data.result ? data.result.name : null);
         if (data.result) {
@@ -498,8 +502,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteMagnetBtn.addEventListener('click', () => handleSaveMagnet(currentModalLotteryId, data.result.kinopoisk_id, ''));
             }
             modalWinnerInfo.querySelector('.add-library-modal-btn').addEventListener('click', () => addMovieToLibrary(data.result));
-        } else {
-            // Рендер для лотерей в ожидании
+            
+            const slider = modalWinnerInfo.querySelector('.slide-to-delete-container');
+            if (slider && !slider.classList.contains('disabled')) {
+                initSlider(slider);
+            }
         }
     };
     
@@ -538,6 +545,90 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modalOverlay) modalOverlay.style.display = 'none';
         document.body.classList.remove('no-scroll');
     };
+    
+    // --- НОВАЯ ЛОГИКА ДЛЯ СЛАЙДЕРА ---
+    
+    const handleDeleteTorrent = async (torrentHash, sliderContainer) => {
+        try {
+            const response = await fetch(`/api/delete-torrent/${torrentHash}`, { method: 'POST' });
+            const data = await response.json();
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) {
+                sliderContainer.classList.add('disabled');
+                const card = gallery.querySelector(`.gallery-item[data-torrent-hash="${torrentHash}"]`);
+                if (card) {
+                    card.classList.remove('has-torrent-on-client');
+                    card.dataset.isOnClient = 'false';
+                }
+            }
+        } catch(e) {
+            showToast('Критическая ошибка при удалении торрента.', 'error');
+        }
+    };
+
+    const initSlider = (sliderContainer) => {
+        const thumb = sliderContainer.querySelector('.slide-to-delete-thumb');
+        const track = sliderContainer.querySelector('.slide-to-delete-track');
+        const fill = sliderContainer.querySelector('.slide-to-delete-fill');
+        if (!thumb || !track || !fill) return;
+
+        let isDragging = false;
+        let startX = 0;
+        let maxDrag = track.offsetWidth - thumb.offsetWidth - 4; // 4px for padding/borders
+
+        const onMouseMove = (e) => {
+            if (!isDragging) return;
+            const currentX = e.clientX || e.touches[0].clientX;
+            let moveX = currentX - startX;
+            moveX = Math.max(0, Math.min(moveX, maxDrag));
+
+            thumb.style.transform = `translateX(${moveX}px)`;
+            fill.style.width = `${moveX + (thumb.offsetWidth / 2)}px`;
+        };
+
+        const onMouseUp = (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            const currentX = e.clientX || e.changedTouches[0].clientX;
+            let moveX = currentX - startX;
+
+            if (moveX > maxDrag * 0.9) {
+                // Успешно
+                handleDeleteTorrent(sliderContainer.dataset.torrentHash, sliderContainer);
+            } else {
+                // Возврат в начало
+                thumb.style.transition = 'transform 0.3s ease';
+                fill.style.transition = 'width 0.3s ease';
+                thumb.style.transform = 'translateX(0px)';
+                fill.style.width = '0px';
+                setTimeout(() => {
+                    thumb.style.transition = '';
+                    fill.style.transition = '';
+                }, 300);
+            }
+
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.removeEventListener('touchmove', onMouseMove);
+            document.removeEventListener('touchend', onMouseUp);
+        };
+
+        const onMouseDown = (e) => {
+            isDragging = true;
+            startX = e.clientX || e.touches[0].clientX;
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('touchmove', onMouseMove);
+            document.addEventListener('touchend', onMouseUp);
+        };
+        
+        thumb.addEventListener('mousedown', onMouseDown);
+        thumb.addEventListener('touchstart', onMouseDown);
+    };
+
+
+    // --- ОБЩИЕ ФУНКЦИИ И ИНИЦИАЛИЗАЦИЯ ---
 
     const formatDateBadges = () => {
         const formatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });

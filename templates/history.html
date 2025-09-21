@@ -44,7 +44,7 @@
                 {% set winner_movie = lottery.movies|selectattr('name', 'equalto', lottery.result_name)|first %}
                 {% set has_identifier = winner_movie and winner_movie.kinopoisk_id in identifiers and identifiers[winner_movie.kinopoisk_id] is not none %}
 
-                <div class="gallery-item"
+                <div class="gallery-item {% if winner_movie.is_on_client %}has-torrent-on-client{% endif %}"
                      data-lottery-id="{{ lottery.id }}"
                      data-kinopoisk-id="{{ winner_movie.kinopoisk_id if winner_movie else '' }}"
                      data-movie-name="{{ lottery.result_name|e }}"
@@ -55,14 +55,19 @@
                      data-movie-genres="{{ (winner_movie.genres|default('', true))|e if winner_movie else '' }}"
                      data-movie-countries="{{ (winner_movie.countries|default('', true))|e if winner_movie else '' }}"
                      data-has-magnet="{{ 'true' if has_identifier else 'false' }}"
-                     data-magnet-link="{{ identifiers[winner_movie.kinopoisk_id].magnet_link|e if has_identifier else '' }}">
+                     data-magnet-link="{{ identifiers[winner_movie.kinopoisk_id].magnet_link|e if has_identifier else '' }}"
+                     data-is-on-client="{{ 'true' if winner_movie.is_on_client else 'false' }}"
+                     data-torrent-hash="{{ winner_movie.torrent_hash|e if winner_movie.torrent_hash else '' }}">
+                    
+                    <div class="torrent-status-indicator"></div>
+
                     <div class="action-buttons">
-                        <button type="button" class="icon-button download-button" title="Скачать фильм" aria-label="Скачать фильм" {% if not has_identifier %}hidden{% endif %}>
+                        <button type="button" class="icon-button download-button" title="Скачать фильм" aria-label="Скачать фильм">
                             <svg class="icon-svg icon-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                 <use href="#icon-download"></use>
                             </svg>
                         </button>
-                        <button type="button" class="icon-button search-button" title="Искать торрент" aria-label="Искать торрент" {% if has_identifier %}hidden{% endif %}>
+                        <button type="button" class="icon-button search-button" title="Искать торрент" aria-label="Искать торрент">
                             <svg class="icon-svg icon-search" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                 <use href="#icon-search"></use>
                             </svg>

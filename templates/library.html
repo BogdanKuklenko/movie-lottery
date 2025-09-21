@@ -40,7 +40,7 @@
         {% if library_movies %}
             {% for movie in library_movies %}
                 <div
-                    class="gallery-item library-card"
+                    class="gallery-item library-card {% if movie.is_on_client %}has-torrent-on-client{% endif %}"
                     data-movie-id="{{ movie.id }}"
                     data-kinopoisk-id="{{ movie.kinopoisk_id or '' }}"
                     data-movie-name="{{ movie.name|e }}"
@@ -53,14 +53,17 @@
                     data-added-at="{{ movie.added_at.isoformat() }}"
                     data-has-magnet="{{ 'true' if movie.has_magnet else 'false' }}"
                     data-magnet-link="{{ (movie.magnet_link or '')|e }}"
+                    data-is-on-client="{{ 'true' if movie.is_on_client else 'false' }}"
+                    data-torrent-hash="{{ movie.torrent_hash|e if movie.torrent_hash else '' }}"
                 >
+                    <div class="torrent-status-indicator"></div>
+
                     <div class="action-buttons">
                         <button
                             type="button"
                             class="icon-button download-button"
                             title="Скачать торрент"
                             aria-label="Скачать торрент"
-                            {% if not movie.has_magnet %}hidden{% endif %}
                         >
                             <svg class="icon-svg icon-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                 <use href="#icon-download"></use>
@@ -71,7 +74,6 @@
                             class="icon-button search-button"
                             title="Искать торрент"
                             aria-label="Искать торрент"
-                            {% if movie.has_magnet %}hidden{% endif %}
                         >
                             <svg class="icon-svg icon-search" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                 <use href="#icon-search"></use>

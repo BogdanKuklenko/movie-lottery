@@ -6,7 +6,7 @@
     --text-color: #f8f9fa; /* Светло-серый */
     --card-bg-color: #1e1e1e; /* Цвет карточек */
     --danger-color: #dc3545; /* Красный для удаления */
-    --torrent-color: #007bff; /* Синий для торрента */
+    --torrent-color: #0d6efd; /* Синий для статуса торрента */
     --torrent-done-color: #28a745; /* Зеленый для завершенного */
     --rating-high: #28a745; /* Зеленый для высокого рейтинга */
     --rating-medium: #fd7e14; /* Оранжевый для среднего */
@@ -466,7 +466,7 @@ button:disabled {
     border-radius: 8px;
     border: none;
     background-color: var(--danger-color);
-    color: var(--secondary-color);
+    color: var(--text-color);
     font-weight: 700;
     cursor: pointer;
     transition: background-color 0.3s ease, transform 0.2s ease;
@@ -674,4 +674,122 @@ button:disabled {
     .roulette img { height: 140px; }
     .history-gallery { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 5px; padding: 5px; }
     .modal-content { width: 100%; height: 100%; max-width: 100%; max-height: 100%; border-radius: 0; padding: 20px 15px; }
+}
+
+/* --- НОВЫЕ СТИЛИ ДЛЯ СТАТУСА И СЛАЙДЕРА --- */
+
+/* Индикатор статуса торрента */
+.torrent-status-indicator {
+    position: absolute;
+    bottom: -1px;
+    left: -1px;
+    width: 30px;
+    height: 30px;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: scale(0.8);
+    pointer-events: none;
+    border-radius: 0 0 0 8px;
+}
+
+.gallery-item.has-torrent-on-client .torrent-status-indicator {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.torrent-status-indicator::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 200%;
+    height: 200%;
+    border-radius: 50%;
+    box-shadow: 0 0 20px 7px var(--torrent-color);
+    transform: translate(-50%, 50%);
+}
+
+/* Контейнер для слайдера */
+.slide-to-delete-container {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--secondary-color);
+}
+
+/* Трек (фон) слайдера */
+.slide-to-delete-track {
+    position: relative;
+    height: 44px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--secondary-color);
+    border-radius: 22px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+
+/* Цветной фон, который проявляется при движении */
+.slide-to-delete-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 0; /* Управляется через JS */
+    border-radius: 22px;
+    background: linear-gradient(to right, #585e64, var(--danger-color));
+    opacity: 0.8;
+}
+
+/* Текст на слайдере */
+.slide-to-delete-text {
+    position: relative;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 700;
+    font-size: 14px;
+    pointer-events: none; /* Чтобы не мешал перетаскиванию */
+    animation: pulse-text 2s infinite;
+}
+@keyframes pulse-text {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+/* Бегунок слайдера */
+.slide-to-delete-thumb {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 40px;
+    height: 40px;
+    background-color: var(--primary-color);
+    border-radius: 50%;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--secondary-color);
+    font-size: 20px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+    transition: transform 0.1s ease-out, background-color 0.2s ease;
+}
+
+.slide-to-delete-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.1);
+}
+
+/* Контейнер для слайдера в неактивном состоянии */
+.slide-to-delete-container.disabled .slide-to-delete-track {
+    background-color: rgba(0,0,0,0.1);
+    border-color: #2c2c2c;
+}
+.slide-to-delete-container.disabled .slide-to-delete-text {
+    display: none;
+}
+.slide-to-delete-container.disabled .slide-to-delete-thumb {
+    display: none;
 }
