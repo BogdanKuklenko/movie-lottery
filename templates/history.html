@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Кино-лотерея: Галерея результатов</title>
+    <title>Кино-лотерея: История лотерей</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,8 +14,11 @@
     <div class="background-rotator"></div>
 
     <header class="gallery-header">
-        <h1>Галерея Лотерей</h1>
-        <a href="{{ url_for('index') }}" class="nav-button">&larr; Вернуться к созданию</a>
+        <h1>История лотерей</h1>
+        <div class="gallery-actions">
+            <a href="{{ url_for('index') }}" class="nav-button">&larr; Вернуться к созданию</a>
+            <a href="{{ url_for('library') }}" class="nav-button">Библиотека</a>
+        </div>
     </header>
 
     <div class="history-gallery">
@@ -27,11 +30,16 @@
                 {# ИЗМЕНЕНИЕ: Теперь мы берем информацию из словаря 'identifiers' #}
                 {% set has_identifier = winner_movie and winner_movie.kinopoisk_id in identifiers and identifiers[winner_movie.kinopoisk_id] is not none %}
 
-                <div class="gallery-item" 
-                     data-lottery-id="{{ lottery.id }}" 
-                     data-kinopoisk-id="{{ winner_movie.kinopoisk_id if winner_movie else '' }}" 
+                <div class="gallery-item"
+                     data-lottery-id="{{ lottery.id }}"
+                     data-kinopoisk-id="{{ winner_movie.kinopoisk_id if winner_movie else '' }}"
                      data-movie-name="{{ lottery.result_name }}"
-                     data-movie-year="{{ lottery.result_year }}">
+                     data-movie-year="{{ lottery.result_year }}"
+                     data-movie-poster="{{ (lottery.result_poster or '')|e }}"
+                     data-movie-description="{{ (winner_movie.description|default('', true))|e if winner_movie else '' }}"
+                     data-movie-rating="{{ '%.1f'|format(winner_movie.rating_kp) if winner_movie and winner_movie.rating_kp is not none else '' }}"
+                     data-movie-genres="{{ (winner_movie.genres|default('', true))|e if winner_movie else '' }}"
+                     data-movie-countries="{{ (winner_movie.countries|default('', true))|e if winner_movie else '' }}">
                     <div class="action-buttons">
                         {# ИЗМЕНЕНИЕ: Проверяем наличие идентификатора в словаре #}
                         {% if has_identifier %}
@@ -39,10 +47,11 @@
                         {% else %}
                             <button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>
                         {% endif %}
+                        <button class="action-button library-button" title="Добавить в библиотеку">&#128218;</button>
                         <button class="action-button-delete delete-button" title="Удалить лотерею">&times;</button>
                     </div>
+                    <div class="date-badge" data-date="{{ lottery.created_at.isoformat() }}"></div>
                     <img src="{{ lottery.result_poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ lottery.result_name }}">
-                    <div class="date-overlay" data-date="{{ lottery.created_at }}"></div>
                 </div>
             {% else %}
                 {# --- КАРТОЧКА ДЛЯ ОЖИДАЮЩЕЙ ЛОТЕРЕИ --- #}
@@ -54,7 +63,7 @@
                         <div class="loader-small"></div>
                         <span>Ожидает<br>розыгрыша</span>
                     </div>
-                    <div class="date-overlay" data-date="{{ lottery.created_at }}"></div>
+                    <div class="date-badge" data-date="{{ lottery.created_at.isoformat() }}"></div>
                 </div>
             {% endif %}
         {% else %}

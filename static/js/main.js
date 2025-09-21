@@ -37,17 +37,56 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h4>${movie.name}</h4>
                     <p>${movie.year}</p>
                 </div>
+                <div class="movie-card-actions">
+                    <button class="secondary-button library-add-btn" data-index="${index}">Добавить в библиотеку</button>
+                </div>
                 <button class="remove-btn" data-index="${index}">&times;</button>
             `;
             movieListDiv.appendChild(movieCard);
         });
-        
+
         document.querySelectorAll('.remove-btn').forEach(button => {
             button.addEventListener('click', (e) => {
                 const indexToRemove = parseInt(e.target.dataset.index, 10);
                 movies.splice(indexToRemove, 1);
                 renderMovieList();
                 updateCreateButtonState();
+            });
+        });
+
+        document.querySelectorAll('.library-add-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const indexToAdd = parseInt(e.target.dataset.index, 10);
+                const movieToAdd = movies[indexToAdd];
+                if (!movieToAdd) return;
+
+                const originalText = e.target.textContent;
+                e.target.disabled = true;
+                e.target.textContent = 'Добавление...';
+
+                try {
+                    const response = await fetch('/api/library', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ movie: movieToAdd })
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        throw new Error(data.message || 'Не удалось добавить фильм.');
+                    }
+                    alert(data.message || 'Фильм добавлен в библиотеку.');
+                    e.target.textContent = 'Добавлено!';
+                } catch (error) {
+                    alert(error.message);
+                    e.target.textContent = originalText;
+                    e.target.disabled = false;
+                    return;
+                }
+
+                setTimeout(() => {
+                    e.target.textContent = originalText;
+                    e.target.disabled = false;
+                }, 2000);
             });
         });
     };

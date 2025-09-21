@@ -17,26 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const pollIntervals = new Map();
     const activeDownloads = new Map();
 
-    const saveActiveDownloads = () => {
-        if (!widget) return;
-        const payload = Array.from(activeDownloads.values()).map((entry) => ({
-            lotteryId: entry.lotteryId,
-            movieName: entry.movieName,
-            kinopoiskId: entry.kinopoiskId || null,
-        }));
-        localStorage.setItem(ACTIVE_DOWNLOADS_KEY, JSON.stringify(payload));
-    };
-
-    const ensureWidgetState = () => {
-        if (!widget) return;
-        const hasDownloads = activeDownloads.size > 0;
-        widget.style.display = hasDownloads ? 'block' : 'none';
-        if (widgetEmptyText) widgetEmptyText.style.display = hasDownloads ? 'none' : 'block';
-        if (widgetDownloadsContainer) widgetDownloadsContainer.style.display = hasDownloads ? 'block' : 'none';
-        if (hasDownloads) {
-            widget.classList.remove('minimized');
-        }
-    };
 
     const getOrCreateDownloadElement = (lotteryId) => {
         if (!widgetDownloadsContainer) return null;
@@ -184,17 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (pollIntervals.has(lotteryId)) {
                         clearInterval(pollIntervals.get(lotteryId));
                         pollIntervals.delete(lotteryId);
-                    }
-                    return;
-                }
 
-                updateDownloadView(lotteryId, data);
-
-                if (data.status && (data.status.includes('seeding') || data.status.includes('completed') || parseFloat(data.progress) >= 100)) {
-                    if (pollIntervals.has(lotteryId)) {
-                        clearInterval(pollIntervals.get(lotteryId));
-                        pollIntervals.delete(lotteryId);
-                    }
                     markDownloadCompleted(lotteryId);
                 }
             } catch (error) {
@@ -399,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${winner.has_magnet ? '<button class="action-button-delete delete-magnet-btn">Удалить ссылку</button>' : ''}
                 </div>
             </div>
+            <button class="secondary-button add-library-modal-btn">Добавить в библиотеку</button>
         `;
 
         modalWinnerInfo.innerHTML = `
@@ -432,6 +403,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+
+        const addToLibraryBtn = modalWinnerInfo.querySelector('.add-library-modal-btn');
+        if (addToLibraryBtn) {
+            addToLibraryBtn.addEventListener('click', () => {
+                addMovieToLibrary({
+                    kinopoisk_id: winner.kinopoisk_id || null,
+                    name: winner.name,
+                    year: winner.year,
+                    poster: winner.poster,
+                    description: winner.description,
+                    rating_kp: winner.rating_kp,
+                    genres: winner.genres,
+                    countries: winner.countries,
+                });
+            });
+        }
+    };
+
+    const buildLibraryPayloadFromCard = (card) => {
+        if (!card) return null;
+        return {
+            kinopoisk_id: card.dataset.kinopoiskId || null,
+            name: card.dataset.movieName || '',
+            year: card.dataset.movieYear || '',
+            poster: card.dataset.moviePoster || '',
+            description: card.dataset.movieDescription || '',
+            rating_kp: card.dataset.movieRating || '',
+            genres: card.dataset.movieGenres || '',
+            countries: card.dataset.movieCountries || '',
+        };
+    };
+
+    const addMovieToLibrary = async (moviePayload) => {
+        if (!moviePayload) return;
+        try {
+            const response = await fetch('/api/library', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ movie: moviePayload }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'Не удалось добавить фильм.');
+            }
+            alert(data.message || 'Фильм добавлен в библиотеку.');
+        } catch (error) {
+            alert(error.message);
+        }
     };
 
     if (gallery) {
@@ -443,6 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isDownloadButton = e.target.classList.contains('download-button');
             const isSearchButton = e.target.classList.contains('search-button');
             const isDeleteButton = e.target.classList.contains('delete-button');
+            const isLibraryButton = e.target.classList.contains('library-button');
 
             e.stopPropagation();
 
@@ -452,6 +472,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 handleSearchClick(movieName, movieYear);
             } else if (isDeleteButton) {
                 handleDeleteLottery(lotteryId, galleryItem);
+            } else if (isLibraryButton) {
+                addMovieToLibrary(buildLibraryPayloadFromCard(galleryItem));
             } else {
                 openModal(lotteryId);
             }
@@ -492,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.dataset.movieName = winner.name || '';
         item.dataset.movieYear = winner.year || '';
 
+
         const actionButton = winner.has_magnet
             ? '<button class="action-button download-button" title="Скачать фильм">&#x2913;</button>'
             : '<button class="action-button search-button" title="Искать торрент">&#x1F50D;</button>';
@@ -499,11 +522,6 @@ document.addEventListener('DOMContentLoaded', () => {
         item.innerHTML = `
             <div class="action-buttons">
                 ${actionButton}
-                <button class="action-button-delete delete-button" title="Удалить лотерею">&times;</button>
-            </div>
-            <img src="${winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="${winner.name}">
-            <div class="date-overlay" data-date="${createdAt}"></div>
-        `;
 
         return item;
     };
@@ -548,4 +566,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initializeStoredDownloads();
     ensureWidgetState();
+
 });

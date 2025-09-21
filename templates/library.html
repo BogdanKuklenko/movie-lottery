@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кино-лотерея: Библиотека</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="gallery-body">
+    <div class="background-rotator"></div>
+
+    <header class="gallery-header">
+        <h1>Библиотека фильмов</h1>
+        <div class="gallery-actions">
+            <a href="{{ url_for('index') }}" class="nav-button">&larr; Вернуться к созданию</a>
+            <a href="{{ url_for('history') }}" class="nav-button">История лотерей</a>
+        </div>
+    </header>
+
+    <div class="history-gallery library-grid">
+        {% if library_movies %}
+            {% for movie in library_movies %}
+                <div class="library-card" data-movie-id="{{ movie.id }}">
+                    <div class="library-card-actions">
+                        <button class="action-button-delete library-remove-btn" title="Удалить из библиотеки">&times;</button>
+                    </div>
+                    <img src="{{ movie.poster or 'https://via.placeholder.com/200x300.png?text=No+Image' }}" alt="{{ movie.name }}">
+                    <div class="library-card-info">
+                        <h3>{{ movie.name }}</h3>
+                        <p class="library-meta">{{ movie.year or 'Год неизвестен' }}</p>
+                        {% if movie.rating_kp %}
+                            <span class="library-rating">KP: {{ '%.1f'|format(movie.rating_kp) }}</span>
+                        {% endif %}
+                        {% if movie.genres or movie.countries %}
+                            <p class="library-extra">{{ movie.genres or 'Жанр неизвестен' }}{% if movie.countries %} / {{ movie.countries }}{% endif %}</p>
+                        {% endif %}
+                        {% if movie.description %}
+                            <p class="library-description">{{ movie.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-history">В библиотеке пока нет фильмов.</p>
+        {% endif %}
+    </div>
+
+    <script src="{{ url_for('static', filename='js/library.js') }}"></script>
+    <script>
+        var backgroundPhotos = {{ background_photos|tojson|safe }};
+    </script>
+    <script src="{{ url_for('static', filename='js/background.js') }}"></script>
+</body>
+</html>
