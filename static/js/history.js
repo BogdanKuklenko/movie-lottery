@@ -488,7 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.dataset.kinopoiskId = kinopoiskId ? String(kinopoiskId) : '';
         }
 
-        const normalized = Boolean(hasMagnet);
+        const normalized = hasMagnet === true || hasMagnet === 'true';
         card.dataset.hasMagnet = normalized ? 'true' : 'false';
         card.dataset.magnetLink = magnetLink || '';
 
