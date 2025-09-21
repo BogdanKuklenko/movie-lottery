@@ -17,53 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const pollIntervals = new Map();
     const activeDownloads = new Map();
 
-    const formatDateTime = (value) => {
-        if (!value) return '';
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return '';
-        return date.toLocaleString('ru-RU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    };
-
-    const hydrateDateBadge = (badge) => {
-        if (!badge) return;
-        const formatted = formatDateTime(badge.dataset.date);
-        if (!formatted) {
-            badge.style.display = 'none';
-            return;
-        }
-        badge.innerHTML = `<span class="calendar-icon">&#128197;</span><span>${formatted}</span>`;
-    };
-
-    const hydrateAllDates = () => {
-        document.querySelectorAll('.date-badge').forEach((badge) => hydrateDateBadge(badge));
-    };
-
-    const saveActiveDownloads = () => {
-        if (!widget) return;
-        const payload = Array.from(activeDownloads.values()).map((entry) => ({
-            lotteryId: entry.lotteryId,
-            movieName: entry.movieName,
-            kinopoiskId: entry.kinopoiskId || null,
-        }));
-        localStorage.setItem(ACTIVE_DOWNLOADS_KEY, JSON.stringify(payload));
-    };
-
-    const ensureWidgetState = () => {
-        if (!widget) return;
-        const hasDownloads = activeDownloads.size > 0;
-        widget.style.display = hasDownloads ? 'block' : 'none';
-        if (widgetEmptyText) widgetEmptyText.style.display = hasDownloads ? 'none' : 'block';
-        if (widgetDownloadsContainer) widgetDownloadsContainer.style.display = hasDownloads ? 'block' : 'none';
-        if (hasDownloads) {
-            widget.classList.remove('minimized');
-        }
-    };
 
     const getOrCreateDownloadElement = (lotteryId) => {
         if (!widgetDownloadsContainer) return null;
@@ -211,17 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (pollIntervals.has(lotteryId)) {
                         clearInterval(pollIntervals.get(lotteryId));
                         pollIntervals.delete(lotteryId);
-                    }
-                    return;
-                }
 
-                updateDownloadView(lotteryId, data);
-
-                if (data.status && (data.status.includes('seeding') || data.status.includes('completed') || parseFloat(data.progress) >= 100)) {
-                    if (pollIntervals.has(lotteryId)) {
-                        clearInterval(pollIntervals.get(lotteryId));
-                        pollIntervals.delete(lotteryId);
-                    }
                     markDownloadCompleted(lotteryId);
                 }
             } catch (error) {
@@ -570,11 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.dataset.kinopoiskId = winner.kinopoisk_id || '';
         item.dataset.movieName = winner.name || '';
         item.dataset.movieYear = winner.year || '';
-        item.dataset.moviePoster = winner.poster || '';
-        item.dataset.movieDescription = winner.description || '';
-        item.dataset.movieRating = winner.rating_kp != null ? winner.rating_kp : '';
-        item.dataset.movieGenres = winner.genres || '';
-        item.dataset.movieCountries = winner.countries || '';
+
 
         const actionButton = winner.has_magnet
             ? '<button class="action-button download-button" title="Скачать фильм">&#x2913;</button>'
@@ -583,14 +522,6 @@ document.addEventListener('DOMContentLoaded', () => {
         item.innerHTML = `
             <div class="action-buttons">
                 ${actionButton}
-                <button class="action-button library-button" title="Добавить в библиотеку">&#128218;</button>
-                <button class="action-button-delete delete-button" title="Удалить лотерею">&times;</button>
-            </div>
-            <div class="date-badge" data-date="${createdAt}"></div>
-            <img src="${winner.poster || 'https://via.placeholder.com/200x300.png?text=No+Image'}" alt="${winner.name}">
-        `;
-
-        hydrateDateBadge(item.querySelector('.date-badge'));
 
         return item;
     };
@@ -635,5 +566,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initializeStoredDownloads();
     ensureWidgetState();
-    hydrateAllDates();
+
 });
