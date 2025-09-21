@@ -346,17 +346,24 @@ button:disabled {
 }
 
 .action-buttons .icon-button {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     border: none;
-    background: transparent;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    border-radius: 50%;
+    background: rgba(17, 19, 24, 0.72);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
+
+.action-buttons .icon-button.download-button { color: #44dac4; }
+.action-buttons .icon-button.search-button { color: #f7c654; }
+.action-buttons .icon-button.delete-button { color: #ff7b7b; }
 
 .action-buttons .icon-button:focus-visible {
     outline: 2px solid rgba(255, 255, 255, 0.85);
@@ -365,27 +372,38 @@ button:disabled {
 }
 
 .action-buttons .icon-button svg {
-    width: 26px;
-    height: 26px;
-    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.55));
-    transition: transform 0.2s ease, filter 0.2s ease;
+    width: 22px;
+    height: 22px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 .action-buttons .icon-button:hover svg {
-    transform: translateY(-1px) scale(1.03);
-    filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.6));
+    transform: translateY(-1px) scale(1.05);
 }
 
 .action-buttons .icon-button:active svg {
-    transform: translateY(0) scale(0.97);
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+    transform: translateY(0) scale(0.95);
 }
 
-.action-buttons .icon-button[disabled],
-.action-buttons .icon-button[disabled] svg {
+.action-buttons .icon-button:hover {
+    background: rgba(25, 28, 34, 0.82);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45);
+}
+
+.action-buttons .icon-button:active {
+    background: rgba(25, 28, 34, 0.66);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+}
+
+.action-buttons .icon-button[disabled] {
     cursor: not-allowed;
     opacity: 0.55;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+    background: rgba(20, 23, 29, 0.55);
+    box-shadow: none;
+}
+
+.action-buttons .icon-button[disabled] svg {
+    opacity: 1;
 }
 
 .icon-sprite {
