@@ -358,6 +358,31 @@ button:disabled {
     position: relative;
     animation: zoomIn 0.3s ease-out;
 }
+.library-modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.danger-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none;
+    background-color: var(--danger-color);
+    color: var(--secondary-color);
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.danger-button:hover {
+    background-color: #b02a37;
+    transform: translateY(-1px);
+}
 .close-button { position: absolute; top: 10px; right: 20px; font-size: 30px; color: #adb5bd; cursor: pointer; transition: color 0.2s; }
 .close-button:hover { color: white; }
 
