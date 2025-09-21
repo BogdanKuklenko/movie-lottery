@@ -6,14 +6,12 @@ import random
 import re
 import string
 import requests
-import threading
 from flask import Flask, render_template, request, jsonify, url_for
-from datetime import datetime, timedelta
+from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import ProgrammingError
 from qbittorrentapi import Client
-from torrentp import TorrentDownloader
 
 # --- Конфигурация ---
 app = Flask(__name__)
@@ -33,7 +31,14 @@ QBIT_USERNAME = os.environ.get('QBIT_USERNAME')
 QBIT_PASSWORD = os.environ.get('QBIT_PASSWORD')
 
 
-# --- Модели Данных ---
+# --- Модели Данных (ОБНОВЛЕНО) ---
+
+# НОВАЯ ТАБЛИЦА "ВЕЧНОЙ ПАМЯТИ"
+class MovieIdentifier(db.Model):
+    __tablename__ = 'movie_identifier'
+    kinopoisk_id = db.Column(db.Integer, primary_key=True, autoincrement=False)
+    magnet_link = db.Column(db.Text, nullable=False)
+
 class Lottery(db.Model):
     id = db.Column(db.String(6), primary_key=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -44,6 +49,8 @@ class Lottery(db.Model):
 
 class Movie(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # НОВОЕ ПОЛЕ для связи с "вечной памятью"
+    kinopoisk_id = db.Column(db.Integer, nullable=True)
     name = db.Column(db.String(200), nullable=False)
     poster = db.Column(db.String(500), nullable=True)
     year = db.Column(db.String(10), nullable=False)
@@ -52,11 +59,7 @@ class Movie(db.Model):
     rating_kp = db.Column(db.Float, nullable=True)
     genres = db.Column(db.String(200), nullable=True)
     countries = db.Column(db.String(200), nullable=True)
-    magnet_link = db.Column(db.Text, nullable=True)
-    torrent_quality = db.Column(db.String(50), nullable=True)
-    torrent_seeds = db.Column(db.Integer, nullable=True)
-    torrent_info_updated_at = db.Column(db.DateTime, nullable=True)
-
+    
 class BackgroundPhoto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     poster_url = db.Column(db.String(500), unique=True, nullable=False)
@@ -82,15 +85,16 @@ def get_movie_data_from_kinopoisk(query):
         response = requests.get(search_url, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()
-        if 'docs' in data and data['docs']: movie = data['docs'][0]
-        elif 'id' in data: movie = data
+        if 'docs' in data and data['docs']: movie_data = data['docs'][0]
+        elif 'id' in data: movie_data = data
         else: return None
-        genres = [genre['name'] for genre in movie.get('genres', [])[:3]]
-        countries = [country['name'] for country in movie.get('countries', [])[:3]]
+        genres = [g['name'] for g in movie_data.get('genres', [])[:3]]
+        countries = [c['name'] for c in movie_data.get('countries', [])[:3]]
         return {
-            "name": movie.get('name', 'Название не найдено'), "poster": movie.get('poster', {}).get('url'),
-            "year": str(movie.get('year', '')), "description": movie.get('description', 'Описание отсутствует.'),
-            "rating_kp": movie.get('rating', {}).get('kp', 0.0), "genres": ", ".join(genres), "countries": ", ".join(countries)
+            "kinopoisk_id": movie_data.get('id'), # <-- ВАЖНО: Возвращаем ID
+            "name": movie_data.get('name', 'Название не найдено'), "poster": movie_data.get('poster', {}).get('url'),
+            "year": str(movie_data.get('year', '')), "description": movie_data.get('description', 'Описание отсутствует.'),
+            "rating_kp": movie_data.get('rating', {}).get('kp', 0.0), "genres": ", ".join(genres), "countries": ", ".join(countries)
         }
     except requests.exceptions.RequestException as e:
         print(f"Ошибка при запросе к API Кинопоиска: {e}")
@@ -99,52 +103,18 @@ def get_movie_data_from_kinopoisk(query):
 def generate_unique_id(length=6):
     while True:
         lottery_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
-        if not Lottery.query.get(lottery_id):
-            return lottery_id
+        if not Lottery.query.get(lottery_id): return lottery_id
 
 def get_background_photos():
     try:
-        photos = BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
-        return [{"poster_url": p.poster_url, "pos_top": p.pos_top, "pos_left": p.pos_left, "rotation": p.rotation, "z_index": p.z_index} for p in photos]
+        return BackgroundPhoto.query.order_by(BackgroundPhoto.added_at.desc()).limit(20).all()
     except ProgrammingError:
         return []
-
-# --- Логика поиска и кэширования ---
-def find_and_cache_torrent_info_task(app_context, movie_id):
-    with app_context:
-        movie = Movie.query.get(movie_id)
-        if not movie:
-            print(f"[Кэширование] Фильм с ID {movie_id} не найден.")
-            return
-
-        search_query = f"{movie.name} {movie.year}"
-        print(f"[Кэширование] Начал поиск для: {search_query}")
-        
-        try:
-            downloader = TorrentDownloader(search_query, './temp_torrents')
-            
-            # ИСПРАВЛЕНО: Обращаемся к свойствам объекта, а не к методам
-            magnet = downloader.magnet_link
-            
-            if magnet:
-                movie.magnet_link = magnet
-                movie.torrent_quality = downloader.quality
-                movie.torrent_seeds = downloader.seeds
-                movie.torrent_info_updated_at = datetime.utcnow()
-                db.session.commit()
-                print(f"[Кэширование] Успех! Информация для '{downloader.title}' сохранена.")
-            else:
-                print(f"[Кэширование] Торрент для '{movie.name}' не найден.")
-
-        except Exception as e:
-            print(f"[Кэширование] Ошибка при поиске для '{movie.name}': {e}")
-
 
 # --- Маршруты ---
 @app.route('/')
 def index():
-    background_photos = get_background_photos()
-    return render_template('index.html', background_photos=background_photos)
+    return render_template('index.html', background_photos=get_background_photos())
 
 @app.route('/fetch-movie', methods=['POST'])
 def get_movie_info():
@@ -160,65 +130,50 @@ def create_lottery():
     if not movies_json or len(movies_json) < 2:
         return jsonify({"error": "Нужно добавить хотя бы два фильма"}), 400
     
-    lottery_id = generate_unique_id()
-    new_lottery = Lottery(id=lottery_id)
+    new_lottery = Lottery(id=generate_unique_id())
     db.session.add(new_lottery)
-    db.session.flush()
 
-    movies_to_process = []
     for movie_data in movies_json:
         new_movie = Movie(
+            kinopoisk_id=movie_data.get('kinopoisk_id'), # <-- Сохраняем ID
             name=movie_data['name'], poster=movie_data.get('poster'), year=movie_data.get('year'),
             description=movie_data.get('description'), rating_kp=movie_data.get('rating_kp'),
-            genres=movie_data.get('genres'), countries=movie_data.get('countries'), lottery_id=new_lottery.id
+            genres=movie_data.get('genres'), countries=movie_data.get('countries'), lottery=new_lottery
         )
         db.session.add(new_movie)
-        db.session.flush()
-        movies_to_process.append(new_movie.id)
-
+    
     max_z_index = db.session.query(db.func.max(BackgroundPhoto.z_index)).scalar() or 0
     for movie_data in movies_json:
-        poster = movie_data.get('poster')
-        if poster and not BackgroundPhoto.query.filter_by(poster_url=poster).first():
-            max_z_index += 1
-            new_photo = BackgroundPhoto(poster_url=poster, pos_top=random.uniform(5, 65), pos_left=random.uniform(5, 75), rotation=random.randint(-30, 30), z_index=max_z_index)
-            db.session.add(new_photo)
+        if poster := movie_data.get('poster'):
+            if not BackgroundPhoto.query.filter_by(poster_url=poster).first():
+                max_z_index += 1
+                new_photo = BackgroundPhoto(poster_url=poster, pos_top=random.uniform(5, 65), pos_left=random.uniform(5, 75), rotation=random.randint(-30, 30), z_index=max_z_index)
+                db.session.add(new_photo)
     
     db.session.commit()
-
-    for movie_id in movies_to_process:
-        thread = threading.Thread(target=find_and_cache_torrent_info_task, args=(app.app_context(), movie_id))
-        thread.daemon = True
-        thread.start()
-
-    return jsonify({"wait_url": url_for('wait_for_result', lottery_id=lottery_id)})
+    return jsonify({"wait_url": url_for('wait_for_result', lottery_id=new_lottery.id)})
 
 @app.route('/wait/<lottery_id>')
 def wait_for_result(lottery_id):
     Lottery.query.get_or_404(lottery_id)
-    play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
-    background_photos = get_background_photos()
-    return render_template('wait.html', lottery_id=lottery_id, play_url=play_url, background_photos=background_photos)
+    return render_template('wait.html', lottery_id=lottery_id, play_url=url_for('play_lottery', lottery_id=lottery_id, _external=True), background_photos=get_background_photos())
 
 @app.route('/history')
 def history():
-    all_lotteries = Lottery.query.order_by(Lottery.created_at.desc()).all()
-    background_photos = get_background_photos()
-    return render_template('history.html', lotteries=all_lotteries, background_photos=background_photos)
+    return render_template('history.html', lotteries=Lottery.query.order_by(Lottery.created_at.desc()).all(), background_photos=get_background_photos())
 
 @app.route('/l/<lottery_id>')
 def play_lottery(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     result_obj = {"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year} if lottery.result_name else None
-    background_photos = get_background_photos()
-    movies_for_js = [{"name": m.name, "poster": m.poster, "year": m.year} for m in lottery.movies]
-    return render_template('play.html', lottery=lottery, result=result_obj, background_photos=background_photos, movies_for_js=json.dumps(movies_for_js))
+    return render_template('play.html', lottery=lottery, result=result_obj, background_photos=get_background_photos())
 
 @app.route('/draw/<lottery_id>', methods=['POST'])
 def draw_winner(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
     if lottery.result_name:
         return jsonify({"name": lottery.result_name, "poster": lottery.result_poster, "year": lottery.result_year})
+    
     winner = random.choice(lottery.movies)
     lottery.result_name = winner.name
     lottery.result_poster = winner.poster
@@ -229,69 +184,69 @@ def draw_winner(lottery_id):
 @app.route('/api/result/<lottery_id>')
 def get_result_data(lottery_id):
     lottery = Lottery.query.get_or_404(lottery_id)
-    play_url = url_for('play_lottery', lottery_id=lottery_id, _external=True)
-    movies_data = [{
-        "id": m.id, "name": m.name, "poster": m.poster, "year": m.year, "description": m.description,
-        "rating_kp": m.rating_kp, "genres": m.genres, "countries": m.countries,
-        "has_magnet": bool(m.magnet_link), "quality": m.torrent_quality, "seeds": m.torrent_seeds
-    } for m in lottery.movies]
+    movies_data = []
+    for m in lottery.movies:
+        identifier = MovieIdentifier.query.get(m.kinopoisk_id)
+        movies_data.append({
+            "kinopoisk_id": m.kinopoisk_id, "name": m.name, "poster": m.poster, "year": m.year, 
+            "description": m.description, "rating_kp": m.rating_kp, "genres": m.genres, "countries": m.countries,
+            "has_magnet": bool(identifier), "magnet_link": identifier.magnet_link if identifier else None
+        })
+
     result_data = next((m for m in movies_data if m["name"] == lottery.result_name), None) if lottery.result_name else None
-    return jsonify({"movies": movies_data, "result": result_data, "createdAt": lottery.created_at.isoformat() + "Z", "play_url": play_url})
+    return jsonify({"movies": movies_data, "result": result_data, "createdAt": lottery.created_at.isoformat() + "Z", "play_url": url_for('play_lottery', lottery_id=lottery.id, _external=True)})
 
 @app.route('/delete-lottery/<lottery_id>', methods=['POST'])
 def delete_lottery(lottery_id):
-    lottery_to_delete = Lottery.query.get(lottery_id)
-    if lottery_to_delete:
-        db.session.delete(lottery_to_delete)
+    if lottery := Lottery.query.get(lottery_id):
+        db.session.delete(lottery)
         db.session.commit()
         return jsonify({"success": True, "message": "Лотерея удалена."})
     return jsonify({"success": False, "message": "Лотерея не найдена."}), 404
 
-@app.route('/api/start-download/<movie_id>', methods=['POST'])
-def start_download(movie_id):
-    movie = Movie.query.get_or_404(movie_id)
+# --- НОВЫЕ И ОБНОВЛЕННЫЕ МАРШРУТЫ ---
 
-    if not movie.magnet_link:
-        return jsonify({"success": False, "message": "Торрент для этого фильма еще не найден. Попробуйте позже."}), 404
+@app.route('/api/movie-magnet', methods=['POST'])
+def save_movie_magnet():
+    data = request.json
+    kinopoisk_id = data.get('kinopoisk_id')
+    magnet_link = data.get('magnet_link')
+
+    if not kinopoisk_id:
+        return jsonify({"success": False, "message": "Отсутствует ID фильма"}), 400
+
+    identifier = MovieIdentifier.query.get(kinopoisk_id)
+    if magnet_link:
+        if identifier:
+            identifier.magnet_link = magnet_link
+        else:
+            identifier = MovieIdentifier(kinopoisk_id=kinopoisk_id, magnet_link=magnet_link)
+            db.session.add(identifier)
+        message = "Magnet-ссылка сохранена."
+    elif identifier:
+        db.session.delete(identifier)
+        message = "Magnet-ссылка удалена."
+    else:
+        message = "Действий не требуется."
+        
+    db.session.commit()
+    return jsonify({"success": True, "message": message})
+
+
+@app.route('/api/start-download/<int:kinopoisk_id>', methods=['POST'])
+def start_download(kinopoisk_id):
+    identifier = MovieIdentifier.query.get_or_404(kinopoisk_id)
+    movie_in_lottery = Movie.query.filter_by(kinopoisk_id=kinopoisk_id).first()
+    category = f"lottery-{movie_in_lottery.lottery_id}" if movie_in_lottery else "lottery-default"
 
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        qbt_client.torrents_add(urls=movie.magnet_link, category=f"lottery-{movie.lottery_id}", is_sequential='true')
+        qbt_client.torrents_add(urls=identifier.magnet_link, category=category, is_sequential='true')
         qbt_client.auth_log_out()
-        return jsonify({"success": True, "message": f"Загрузка '{movie.name}' началась!"})
+        return jsonify({"success": True, "message": "Загрузка началась!"})
     except Exception as e:
-        error_message = f"Не удалось подключиться к qBittorrent: {e}"
-        print(error_message)
-        return jsonify({"success": False, "message": error_message}), 500
-
-def update_all_seeders_task(app_context):
-    with app_context:
-        print("[Обновление] Запущена задача обновления сидов.")
-        movies_to_update = Movie.query.filter(
-            Movie.magnet_link.isnot(None),
-            Movie.torrent_info_updated_at < (datetime.utcnow() - timedelta(hours=24))
-        ).all()
-
-        if not movies_to_update:
-            print("[Обновление] Нет фильмов для обновления.")
-            return
-
-        print(f"[Обновление] Найдено {len(movies_to_update)} фильмов для обновления.")
-        for movie in movies_to_update:
-            find_and_cache_torrent_info_task(app.app_context(), movie.id)
-        
-        print("[Обновление] Задача обновления сидов завершена.")
-
-@app.route('/api/trigger-seed-update/<secret_key>')
-def trigger_seed_update(secret_key):
-    if secret_key != "YOUR_SUPER_SECRET_KEY":
-        return "Unauthorized", 401
-    
-    thread = threading.Thread(target=update_all_seeders_task, args=(app.app_context(),))
-    thread.daemon = True
-    thread.start()
-    return "Задача обновления сидов запущена в фоновом режиме.", 200
+        return jsonify({"success": False, "message": f"Ошибка qBittorrent: {e}"}), 500
 
 @app.route('/api/torrent-status/<lottery_id>')
 def get_torrent_status(lottery_id):
@@ -299,17 +254,16 @@ def get_torrent_status(lottery_id):
     try:
         qbt_client = Client(host=QBIT_HOST, port=QBIT_PORT, username=QBIT_USERNAME, password=QBIT_PASSWORD)
         qbt_client.auth_log_in()
-        category = f"lottery-{lottery_id}"
-        torrents = qbt_client.torrents_info(category=category)
+        torrents = qbt_client.torrents_info(category=f"lottery-{lottery_id}")
         if not torrents:
             return jsonify({"status": "not_found"})
+        
         torrent = torrents[0]
-        status_info = {
+        return jsonify({
             "status": torrent.state, "progress": f"{torrent.progress * 100:.1f}",
-            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}",
-            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м", "name": torrent.name
-        }
-        return jsonify(status_info)
+            "speed": f"{torrent.dlspeed / 1024 / 1024:.2f}", "name": torrent.name,
+            "eta": f"{torrent.eta // 3600}ч {(torrent.eta % 3600) // 60}м"
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
     finally:
@@ -317,9 +271,10 @@ def get_torrent_status(lottery_id):
             try: qbt_client.auth_log_out()
             except: pass
 
+# --- Служебные маршруты ---
 @app.route('/init-db/super-secret-key-for-db-init-12345')
 def init_db():
-    with app_context:
+    with app.app_context():
         db.drop_all()
         db.create_all()
     return "База данных полностью очищена и создана заново!"
