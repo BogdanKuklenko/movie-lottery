@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!gallery) return;
         const formatter = new Intl.DateTimeFormat('ru-RU', {
             day: '2-digit',
-            month: 'long',
+            month: '2-digit',
             year: 'numeric',
         });
 
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!iso) return;
             const date = new Date(iso);
             if (Number.isNaN(date.getTime())) return;
-            badge.innerHTML = `<span class="calendar-icon">&#x1F4C5;</span>${formatter.format(date)}`;
+            badge.textContent = formatter.format(date);
         });
     };
 

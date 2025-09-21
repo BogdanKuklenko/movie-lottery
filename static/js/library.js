@@ -8,11 +8,286 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyMessage = document.querySelector('.library-empty-message');
     const placeholderPoster = 'https://via.placeholder.com/200x300.png?text=No+Image';
 
+    const widget = document.getElementById('torrent-status-widget');
+    const widgetHeader = widget ? widget.querySelector('.widget-header') : null;
+    const widgetToggleBtn = widget ? widget.querySelector('#widget-toggle-btn') : null;
+    const widgetDownloadsContainer = widget ? widget.querySelector('#widget-downloads') : null;
+    const widgetEmptyText = widget ? widget.querySelector('.widget-empty') : null;
+
+    const ACTIVE_DOWNLOADS_KEY = 'libraryActiveDownloads';
+
+    const pollIntervals = new Map();
+    const activeDownloads = new Map();
+
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    const escapeAttr = (value) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;');
+    };
+
+    const safeJsonParse = (value) => {
+        try {
+            return JSON.parse(value);
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const saveActiveDownloads = () => {
+        if (!widget) return;
+        try {
+            const payload = Array.from(activeDownloads.values()).map((entry) => ({
+                movieId: entry.movieId,
+                movieName: entry.movieName,
+                kinopoiskId: entry.kinopoiskId || null,
+            }));
+            localStorage.setItem(ACTIVE_DOWNLOADS_KEY, JSON.stringify(payload));
+        } catch (error) {
+            console.warn('Не удалось сохранить активные загрузки:', error);
+        }
+    };
+
+    const loadStoredDownloads = () => {
+        if (!widget) return [];
+        try {
+            const raw = localStorage.getItem(ACTIVE_DOWNLOADS_KEY);
+            if (!raw) return [];
+            const parsed = safeJsonParse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.warn('Не удалось восстановить активные загрузки:', error);
+            localStorage.removeItem(ACTIVE_DOWNLOADS_KEY);
+            return [];
+        }
+    };
+
+    const ensureWidgetState = () => {
+        if (!widget) return;
+        const hasDownloads = activeDownloads.size > 0;
+        widget.style.display = hasDownloads ? 'block' : 'none';
+        if (widgetEmptyText) {
+            widgetEmptyText.style.display = hasDownloads ? 'none' : 'block';
+        }
+        if (widgetDownloadsContainer) {
+            widgetDownloadsContainer.style.display = hasDownloads ? 'block' : 'none';
+        }
+        if (hasDownloads) {
+            widget.classList.remove('minimized');
+        }
+    };
+
+    const getOrCreateDownloadElement = (movieId) => {
+        if (!widgetDownloadsContainer) return null;
+        let item = widgetDownloadsContainer.querySelector(`[data-movie-id="${movieId}"]`);
+        if (!item) {
+            item = document.createElement('div');
+            item.className = 'widget-download';
+            item.dataset.movieId = movieId;
+            item.innerHTML = `
+                <h5 class="widget-download-title"></h5>
+                <div class="progress-bar-container">
+                    <div class="progress-bar"></div>
+                </div>
+                <div class="widget-stats">
+                    <span class="progress-text">0%</span>
+                    <span class="speed-text">0.00 МБ/с</span>
+                    <span class="eta-text">--:--</span>
+                </div>
+                <div class="widget-stats-bottom">
+                    <span class="peers-text">Сиды: 0 / Пиры: 0</span>
+                </div>
+            `;
+            widgetDownloadsContainer.appendChild(item);
+        }
+        return item;
+    };
+
+    const registerDownload = (movieId, movieName, kinopoiskId, { skipSave = false } = {}) => {
+        if (!movieId) return null;
+        const existing = activeDownloads.get(movieId) || {};
+        const updated = {
+            ...existing,
+            movieId,
+            movieName: movieName || existing.movieName || 'Фильм',
+            kinopoiskId: kinopoiskId || existing.kinopoiskId || null,
+        };
+        activeDownloads.set(movieId, updated);
+        const element = getOrCreateDownloadElement(movieId);
+        if (element) {
+            const title = element.querySelector('.widget-download-title');
+            if (title) {
+                title.textContent = `Загрузка: ${updated.movieName}`;
+            }
+        }
+        ensureWidgetState();
+        if (!skipSave) saveActiveDownloads();
+        return updated;
+    };
+
+    const removeDownload = (movieId) => {
+        if (pollIntervals.has(movieId)) {
+            clearInterval(pollIntervals.get(movieId));
+            pollIntervals.delete(movieId);
+        }
+        if (activeDownloads.has(movieId)) {
+            activeDownloads.delete(movieId);
+            saveActiveDownloads();
+        }
+        if (widgetDownloadsContainer) {
+            const element = widgetDownloadsContainer.querySelector(`[data-movie-id="${movieId}"]`);
+            if (element) {
+                element.remove();
+            }
+        }
+        ensureWidgetState();
+    };
+
+    const updateDownloadView = (movieId, data) => {
+        if (!widgetDownloadsContainer) return;
+        const element = widgetDownloadsContainer.querySelector(`[data-movie-id="${movieId}"]`);
+        if (!element) return;
+
+        const title = element.querySelector('.widget-download-title');
+        const bar = element.querySelector('.progress-bar');
+        const progressText = element.querySelector('.progress-text');
+        const speedText = element.querySelector('.speed-text');
+        const etaText = element.querySelector('.eta-text');
+        const peersText = element.querySelector('.peers-text');
+
+        if (data.name && title) {
+            title.textContent = `Загрузка: ${data.name}`;
+        }
+
+        if (data.status === 'error') {
+            if (progressText) progressText.textContent = 'Ошибка';
+            if (speedText) speedText.textContent = '-';
+            if (etaText) etaText.textContent = '-';
+            if (peersText) peersText.textContent = data.message || '';
+            if (bar) bar.style.width = '0%';
+            return;
+        }
+
+        if (data.status === 'not_found') {
+            if (progressText) progressText.textContent = 'Ожидание...';
+            if (speedText) speedText.textContent = '0.00 МБ/с';
+            if (etaText) etaText.textContent = '--:--';
+            if (peersText) peersText.textContent = 'Торрент не найден';
+            if (bar) bar.style.width = '0%';
+            return;
+        }
+
+        const progressValue = Number.parseFloat(data.progress) || 0;
+        if (bar) bar.style.width = `${Math.min(100, Math.max(0, progressValue))}%`;
+        if (progressText) progressText.textContent = `${progressValue.toFixed(0)}%`;
+        if (speedText) speedText.textContent = data.speed ? `${data.speed} МБ/с` : '0.00 МБ/с';
+        if (etaText) etaText.textContent = data.eta || '--:--';
+        if (peersText) peersText.textContent = `Сиды: ${data.seeds ?? 0} / Пиры: ${data.peers ?? 0}`;
+    };
+
+    const markDownloadCompleted = (movieId) => {
+        if (!widgetDownloadsContainer) return;
+        const element = widgetDownloadsContainer.querySelector(`[data-movie-id="${movieId}"]`);
+        if (!element) return;
+
+        const bar = element.querySelector('.progress-bar');
+        const progressText = element.querySelector('.progress-text');
+        const speedText = element.querySelector('.speed-text');
+        const etaText = element.querySelector('.eta-text');
+        const peersText = element.querySelector('.peers-text');
+
+        if (bar) bar.style.width = '100%';
+        if (progressText) progressText.textContent = '100%';
+        if (speedText) speedText.textContent = 'Готово';
+        if (etaText) etaText.textContent = '--';
+        if (peersText) peersText.textContent = 'Раздача';
+
+        setTimeout(() => removeDownload(movieId), 5000);
+    };
+
+    const startTorrentStatusPolling = (movieId, movieName, kinopoiskId, { skipRegister = false } = {}) => {
+        if (!movieId) return;
+        if (!skipRegister) {
+            registerDownload(movieId, movieName, kinopoiskId);
+        }
+
+        if (pollIntervals.has(movieId)) {
+            clearInterval(pollIntervals.get(movieId));
+        }
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`/api/library/torrent-status/${movieId}`);
+                if (!response.ok) {
+                    throw new Error('Сервер вернул ошибку статуса');
+                }
+                const data = await response.json();
+
+                if (data.status === 'error') {
+                    updateDownloadView(movieId, data);
+                    if (pollIntervals.has(movieId)) {
+                        clearInterval(pollIntervals.get(movieId));
+                        pollIntervals.delete(movieId);
+                    }
+                    return;
+                }
+
+                updateDownloadView(movieId, data);
+
+                const progressValue = Number.parseFloat(data.progress) || 0;
+                const statusText = (data.status || '').toLowerCase();
+                const isCompleted = progressValue >= 100 || statusText.includes('seeding') || statusText.includes('completed');
+
+                if (isCompleted) {
+                    if (pollIntervals.has(movieId)) {
+                        clearInterval(pollIntervals.get(movieId));
+                        pollIntervals.delete(movieId);
+                    }
+                    markDownloadCompleted(movieId);
+                }
+            } catch (error) {
+                console.error('Ошибка при опросе статуса торрента:', error);
+                updateDownloadView(movieId, { status: 'error', message: 'Нет связи с qBittorrent' });
+                if (pollIntervals.has(movieId)) {
+                    clearInterval(pollIntervals.get(movieId));
+                    pollIntervals.delete(movieId);
+                }
+            }
+        };
+
+        poll();
+        const intervalId = setInterval(poll, 3000);
+        pollIntervals.set(movieId, intervalId);
+    };
+
+    const initializeStoredDownloads = () => {
+        if (!widget) return;
+        const stored = loadStoredDownloads();
+        stored.forEach((entry) => {
+            if (!entry || !entry.movieId) return;
+            startTorrentStatusPolling(entry.movieId, entry.movieName, entry.kinopoiskId);
+        });
+    };
+
     const formatDateBadges = () => {
         if (!gallery) return;
         const formatter = new Intl.DateTimeFormat('ru-RU', {
             day: '2-digit',
-            month: 'long',
+            month: '2-digit',
             year: 'numeric',
         });
 
@@ -23,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const date = new Date(iso);
             if (Number.isNaN(date.getTime())) return;
 
-            badge.innerHTML = `<span class="calendar-icon">&#x1F4C5;</span>${formatter.format(date)}`;
+            badge.textContent = formatter.format(date);
         });
     };
 
@@ -75,9 +350,104 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             closeModal();
+            removeDownload(movieId);
             removeCardFromDom(card);
         } catch (error) {
             alert(error.message);
+        }
+    };
+
+    const updateCardMagnetState = (card, { hasMagnet, magnetLink }) => {
+        if (!card) return;
+        const normalized = Boolean(hasMagnet);
+        card.dataset.hasMagnet = normalized ? 'true' : 'false';
+        card.dataset.magnetLink = magnetLink || '';
+        const downloadBtn = card.querySelector('.download-button');
+        const kinopoiskId = card.dataset.kinopoiskId;
+        if (downloadBtn) {
+            const canDownload = normalized && Boolean(kinopoiskId);
+            if (canDownload) {
+                downloadBtn.removeAttribute('disabled');
+                downloadBtn.title = 'Скачать торрент';
+            } else {
+                downloadBtn.setAttribute('disabled', 'disabled');
+                downloadBtn.title = kinopoiskId ? 'Добавьте magnet-ссылку, чтобы скачать' : 'kinopoisk_id не указан';
+            }
+        }
+    };
+
+    const handleSaveMagnet = async (card, magnetLink) => {
+        if (!card) return;
+        const kinopoiskId = card.dataset.kinopoiskId;
+        if (!kinopoiskId) {
+            alert('Для этого фильма не указан kinopoisk_id.');
+            return;
+        }
+
+        const payload = {
+            kinopoisk_id: Number(kinopoiskId),
+            magnet_link: (magnetLink || '').trim(),
+        };
+
+        try {
+            const response = await fetch('/api/movie-magnet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            alert(data.message);
+            if (!response.ok || !data.success) {
+                return;
+            }
+
+            updateCardMagnetState(card, { hasMagnet: data.has_magnet, magnetLink: data.magnet_link });
+            if (modalOverlay && modalOverlay.style.display === 'flex') {
+                renderModal(card);
+            }
+        } catch (error) {
+            console.error('Ошибка при сохранении magnet-ссылки:', error);
+            alert('Произошла критическая ошибка.');
+        }
+    };
+
+    const handleDeleteMagnet = (card) => {
+        if (!card) return;
+        if (!confirm('Удалить сохраненную magnet-ссылку?')) {
+            return;
+        }
+        handleSaveMagnet(card, '');
+    };
+
+    const handleDownload = async (card) => {
+        if (!card) return;
+        const movieId = card.dataset.movieId;
+        const kinopoiskId = card.dataset.kinopoiskId;
+        if (!movieId) return;
+        if (!kinopoiskId) {
+            alert('Для этого фильма не указан kinopoisk_id.');
+            return;
+        }
+        if (card.dataset.hasMagnet !== 'true') {
+            alert('Сначала добавьте magnet-ссылку для этого фильма.');
+            renderModal(card);
+            return;
+        }
+
+        registerDownload(movieId, card.dataset.movieName, kinopoiskId);
+        try {
+            const response = await fetch(`/api/library/start-download/${movieId}`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                startTorrentStatusPolling(movieId, card.dataset.movieName, kinopoiskId, { skipRegister: true });
+            } else {
+                alert(data.message || 'Не удалось начать загрузку.');
+                removeDownload(movieId);
+            }
+        } catch (error) {
+            console.error('Ошибка при запуске скачивания:', error);
+            alert('Произошла критическая ошибка.');
+            removeDownload(movieId);
         }
     };
 
@@ -91,6 +461,9 @@ document.addEventListener('DOMContentLoaded', () => {
             movieGenres = '',
             movieCountries = '',
             movieRating = '',
+            kinopoiskId = '',
+            magnetLink = '',
+            hasMagnet = 'false',
         } = card.dataset;
 
         const ratingValue = parseFloat(movieRating);
@@ -100,17 +473,35 @@ document.addEventListener('DOMContentLoaded', () => {
             ratingBadge = `<div class="rating-badge ${ratingClass}">${ratingValue.toFixed(1)}</div>`;
         }
 
+        const canDownload = hasMagnet === 'true' && Boolean(kinopoiskId);
+        const hasKinopoisk = Boolean(kinopoiskId);
+        const posterUrl = moviePoster || placeholderPoster;
+
         modalBody.innerHTML = `
             <div class="winner-card">
                 <div class="winner-poster">
-                    <img src="${moviePoster || placeholderPoster}" alt="Постер ${movieName}">
+                    <img src="${escapeAttr(posterUrl)}" alt="Постер ${escapeAttr(movieName)}">
                     ${ratingBadge}
                 </div>
                 <div class="winner-details">
-                    <h2>${movieName}${movieYear ? ` (${movieYear})` : ''}</h2>
-                    <p class="meta-info">${movieGenres || 'н/д'} / ${movieCountries || 'н/д'}</p>
-                    <p class="description">${movieDescription || 'Описание отсутствует.'}</p>
+                    <h2>${escapeHtml(movieName)}${movieYear ? ` (${escapeHtml(movieYear)})` : ''}</h2>
+                    <p class="meta-info">${escapeHtml(movieGenres || 'н/д')} / ${escapeHtml(movieCountries || 'н/д')}</p>
+                    <p class="description">${escapeHtml(movieDescription || 'Описание отсутствует.')}</p>
+                    ${hasKinopoisk
+                        ? `
+                            <div class="magnet-form">
+                                <label for="magnet-input">Magnet-ссылка:</label>
+                                <input type="text" id="magnet-input" value="${escapeAttr(magnetLink)}" placeholder="Вставьте magnet-ссылку и нажмите Сохранить...">
+                                <div class="magnet-actions">
+                                    <button type="button" class="action-button save-magnet-btn">Сохранить</button>
+                                    ${hasMagnet === 'true' ? '<button type="button" class="action-button-delete delete-magnet-btn">Удалить ссылку</button>' : ''}
+                                </div>
+                            </div>
+                        `
+                        : '<p class="meta-info">Для этого фильма не указан Kinopoisk ID, поэтому magnet-ссылку сохранить нельзя.</p>'
+                    }
                     <div class="library-modal-actions">
+                        <button class="secondary-button modal-download-btn"${canDownload ? '' : ' disabled'}>Скачать торрент</button>
                         <button class="secondary-button modal-search-btn">Искать торрент</button>
                         <button class="danger-button modal-delete-btn">Удалить из библиотеки</button>
                     </div>
@@ -128,6 +519,30 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteBtn.addEventListener('click', () => handleDelete(card));
         }
 
+        const downloadBtn = modalBody.querySelector('.modal-download-btn');
+        if (downloadBtn && canDownload) {
+            downloadBtn.addEventListener('click', () => handleDownload(card));
+        }
+
+        const saveBtn = modalBody.querySelector('.save-magnet-btn');
+        const magnetInput = modalBody.querySelector('#magnet-input');
+        if (saveBtn && magnetInput) {
+            saveBtn.addEventListener('click', () => handleSaveMagnet(card, magnetInput.value));
+        }
+        if (magnetInput) {
+            magnetInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleSaveMagnet(card, magnetInput.value);
+                }
+            });
+        }
+
+        const deleteMagnetBtn = modalBody.querySelector('.delete-magnet-btn');
+        if (deleteMagnetBtn) {
+            deleteMagnetBtn.addEventListener('click', () => handleDeleteMagnet(card));
+        }
+
         modalOverlay.style.display = 'flex';
         document.body.classList.add('no-scroll');
     };
@@ -136,6 +551,12 @@ document.addEventListener('DOMContentLoaded', () => {
         gallery.addEventListener('click', (event) => {
             const card = event.target.closest('.gallery-item');
             if (!card) return;
+
+            if (event.target.classList.contains('download-button')) {
+                event.stopPropagation();
+                handleDownload(card);
+                return;
+            }
 
             if (event.target.classList.contains('search-button')) {
                 event.stopPropagation();
@@ -165,6 +586,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (widgetHeader) {
+        widgetHeader.addEventListener('click', () => {
+            widget.classList.toggle('minimized');
+        });
+    }
+
+    if (widgetToggleBtn) {
+        widgetToggleBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            widget.classList.toggle('minimized');
+        });
+    }
+
+    const initializeCardStates = () => {
+        if (!gallery) return;
+        gallery.querySelectorAll('.gallery-item').forEach((card) => {
+            updateCardMagnetState(card, {
+                hasMagnet: card.dataset.hasMagnet === 'true',
+                magnetLink: card.dataset.magnetLink || '',
+            });
+        });
+    };
+
+    initializeCardStates();
     formatDateBadges();
     ensureEmptyState();
+    initializeStoredDownloads();
+    ensureWidgetState();
 });
